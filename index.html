@@ -2,386 +2,152 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="viewport" content="width=device-width,initial-scale=1, viewport-fit=cover, user-scalable=no" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>Pi Camera Monitor</title>
+  <title>Pi Camera — Live</title>
+  <meta name="description" content="Simple HLS viewer for iPhone. Plays the HLS stream produced by hls_stream.py" />
   <style>
-    :root {
-      --safe-area-top: env(safe-area-inset-top, 0px);
-      --safe-area-bottom: env(safe-area-inset-bottom, 0px);
-    }
-    html { height: 100%; }
-    body { 
-      height: 100%; 
-      margin: 0; 
-      padding: 0;
-      font-family: -apple-system, system-ui, Arial, sans-serif;
-      background: #000;
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      overscroll-behavior: none;
-    }
-    .container { 
-      display: flex; 
-      flex-direction: column; 
+    html,body {
       height: 100%;
-      padding-top: var(--safe-area-top);
-      padding-bottom: var(--safe-area-bottom);
-      box-sizing: border-box;
+      margin: 0;
+      background: #000;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
     }
-    .upper { 
-      flex: 1 1 60%; 
-      display: flex; 
-      align-items: center; 
-      justify-content: center; 
-      background: #000; 
-      position: relative;
-      overflow: hidden;
-    }
-    .overlay {
-      position: absolute;
+    .wrap {
+      position: fixed;
       inset: 0;
       display: flex;
       align-items: center;
       justify-content: center;
-      color: #fff;
-      background: linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.6));
-      font-size: 18px;
-      z-index: 10;
-      pointer-events: none;
-      transition: opacity 0.2s ease;
+      background: #000;
     }
-    img { 
-      width: 100%; 
-      height: 100%; 
-      object-fit: cover;
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #000;
+    }
+    .status {
       position: absolute;
-      top: 0;
-      left: 0;
-    }
-    .lower { 
-      flex: 1 1 40%; 
-      display: flex; 
-      flex-direction: row; 
-      padding: 12px; 
-      gap: 12px; 
-      box-sizing: border-box;
-      background: rgba(0,0,0,0.8);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
-    }
-    .left { 
-      flex: 1 1 50%; 
-      display: flex; 
-      flex-direction: column;
-      min-width: 0;
-    }
-    .right { 
-      flex: 1 1 50%;
-      min-width: 0;
-    }
-    .eq-box { 
-      height: 120px; 
-      background: rgba(17,17,17,0.8);
-      border-radius: 16px; 
-      padding: 12px;
-      box-sizing: border-box;
-      backdrop-filter: blur(5px);
-      -webkit-backdrop-filter: blur(5px);
-    }
-    .placeholders { 
-      display: flex; 
-      gap: 12px; 
-      margin-top: 12px;
-      height: 120px;
-    }
-    .ph { 
-      flex: 1; 
-      background: rgba(241,241,241,0.1);
-      border-radius: 16px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: rgba(255,255,255,0.5);
-      backdrop-filter: blur(5px);
-      -webkit-backdrop-filter: blur(5px);
+      center: 12px;
+      top: 12px;
+      color: #eee;
       font-size: 13px;
-    }
-    .controls { 
-      margin-top: 12px;
-      display: flex;
-      gap: 8px;
-    }
-    button { 
-      flex: 1;
-      padding: 16px;
-      border-radius: 16px;
-      border: none;
-      background: rgba(255,255,255,0.1);
-      backdrop-filter: blur(5px);
-      -webkit-backdrop-filter: blur(5px);
-      color: white;
-      font-size: 15px;
-      font-weight: 500;
-      -webkit-tap-highlight-color: transparent;
-    }
-    button:active {
-      background: rgba(255,255,255,0.2);
+      background: rgba(0,0,0,0.4);
+      padding: 6px 8px;
+      border-radius: 8px;
+      backdrop-filter: blur(4px);
     }
   </style>
 </head>
 <body>
-<div class="container">
-  <div class="upper">
-    <img id="streamImage" src="stream.mjpg" alt="Camera Stream" />
-    <div id="overlay" class="overlay" style="display:none">Reconnecting…</div>
+  <div class="wrap">
+    <video id="player" playsinline webkit-playsinline muted autoplay controls>
+      <source src="/hls/stream.m3u8" type="application/vnd.apple.mpegurl">
+      Your browser does not support HLS playback natively.
+    </video>
+
+    <div class="status" id="status">Connecting…</div>
   </div>
-  <div class="lower">
-    <div class="left">
-      <div class="eq-box">
-        <canvas id="eqCanvas" width="600" height="120"></canvas>
-      </div>
-      <div class="controls">
-        <button id="muteBtn">Mute</button>
-      </div>
-    </div>
-    <div class="right">
-      <div class="placeholders">
-        <div class="ph">Sound Level</div>
-        <div class="ph">Noise Alert</div>
-      </div>
-    </div>
-  </div>
-</div>
 
-<script>
-(async () => {
-  const canvas = document.getElementById('eqCanvas');
-  const ctx = canvas.getContext('2d');
-  const muteBtn = document.getElementById('muteBtn');
-  muteBtn.textContent = 'Mute';
+  <script>
+    (function () {
+      const player = document.getElementById('player');
+      const statusEl = document.getElementById('status');
 
-  let audioCtx;
-  let gainNode;
-  let analyser;
-  let isMuted = false;
+      let trying = 0;
 
-  // Initialize audio context
-  try {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    gainNode = audioCtx.createGain();
-    // start unmuted
-    gainNode.gain.value = 1;
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 256;
-    gainNode.connect(analyser);
-    analyser.connect(audioCtx.destination);
-  } catch (err) {
-    console.warn('Failed to initialize audio:', err);
-  }
+      // Hide overlay once playback starts
+      player.addEventListener('playing', () => {
+        overlay.style.display = 'none';
+        statusEl.textContent = 'Live';
+      });
 
-  // Set up mute button
-  muteBtn.onclick = async () => {
-    // On many mobile browsers the AudioContext must be resumed by a user gesture.
-    if (audioCtx && audioCtx.state === 'suspended') {
-      try {
-        await audioCtx.resume();
-      } catch (e) {
-        console.warn('AudioContext resume failed', e);
+      player.addEventListener('waiting', () => {
+        statusEl.textContent = 'Buffering…';
+      });
+
+      player.addEventListener('stalled', () => {
+        statusEl.textContent = 'Stalled — reconnecting…';
+      });
+
+      player.addEventListener('error', () => {
+        statusEl.textContent = 'Playback error — retrying…';
+        retryLoad();
+      });
+
+      // Attempt to autoplay (muted). On iPhone autoplay with sound is blocked,
+      // so we start muted and provide the overlay button for first user gesture.
+      async function tryAutoplay() {
+        try {
+          await player.play();
+          statusEl.textContent = 'Live';
+          overlay.style.display = 'none';
+        } catch (e) {
+          // autoplay blocked — show overlay so user can tap to start & unmute
+          overlay.style.display = 'flex';
+          statusEl.textContent = 'Tap to play';
+        }
       }
-      // Ensure we are unmuted after resume
-      isMuted = false;
-      if (gainNode) gainNode.gain.value = 1;
-      muteBtn.textContent = 'Mute';
-      return;
-    }
 
-    // Normal toggle: mute/unmute
-    isMuted = !isMuted;
-    if (gainNode) {
-      gainNode.gain.value = isMuted ? 0 : 1;
-    }
-    muteBtn.textContent = isMuted ? 'Unmute' : 'Mute';
-  };
-
-  // --- Stream reconnection helper (detect stale MJPEG frames and reload) ---
-  const streamImage = document.getElementById('streamImage');
-  const overlayEl = document.getElementById('overlay');
-  function showOverlay(show) {
-    if (!overlayEl) return;
-    overlayEl.style.display = show ? 'flex' : 'none';
-  }
-
-  // Force reload the image with cache-busting param
-  function reloadStreamImage() {
-    try {
-      // some browsers won't reload if the src is identical, add a timestamp
-      streamImage.src = 'stream.mjpg?ts=' + Date.now();
-    } catch (e) {
-      // fallback: replace element
-      const parent = streamImage.parentNode;
-      const img = document.createElement('img');
-      img.id = 'streamImage';
-      img.src = 'stream.mjpg?ts=' + Date.now();
-      img.alt = 'Camera Stream';
-      img.style.position = 'absolute';
-      img.style.top = '0';
-      img.style.left = '0';
-      img.style.width = '100%';
-      img.style.height = '100%';
-      img.style.objectFit = 'cover';
-      parent.replaceChild(img, streamImage);
-    }
-  }
-
-  // When <img> fails, show overlay and attempt reload
-  if (streamImage) {
-    streamImage.onerror = () => {
-      showOverlay(true);
-      setTimeout(() => reloadStreamImage(), 1000);
-    };
-    streamImage.onload = () => {
-      // a new connection succeeded
-      showOverlay(false);
-    };
-  }
-
-  // Poll server for last-frame time and reload when stale
-  const STALE_SECONDS = 2.0; // threshold for considering stream stalled
-  let lastKnown = 0;
-  async function pollFrameInfo() {
-    try {
-      const r = await fetch('/frame-info', { cache: 'no-store' });
-      if (!r.ok) return;
-      const info = await r.json();
-      const serverTs = Number(info.lastFrameUnix) || 0;
-      lastKnown = serverTs;
-      const now = Date.now() / 1000;
-      if (now - serverTs > STALE_SECONDS) {
-        // stream appears stale, attempt reload
-        showOverlay(true);
-        reloadStreamImage();
-      } else {
-        showOverlay(false);
+      // Retry loading the playlist with exponential backoff
+      function retryLoad() {
+        trying++;
+        const delay = Math.min(30000, 500 * Math.pow(2, trying)); // up to 30s
+        setTimeout(() => {
+          try {
+            // cachebust to force fresh playlist request
+            const src = '/hls/stream.m3u8?cb=' + Date.now();
+            // If source element exists, update it. Otherwise set player.src
+            const source = player.querySelector('source');
+            if (source) {
+              source.src = src;
+            } else {
+              player.src = src;
+            }
+            // load and try to play
+            player.load();
+            player.play().catch(() => {
+              overlay.style.display = 'flex';
+            });
+          } catch (e) {
+            // schedule another retry
+            retryLoad();
+          }
+        }, delay);
       }
-    } catch (e) {
-      // network error: show overlay and try to reload image
-      showOverlay(true);
-      try { reloadStreamImage(); } catch (ee) {}
-    }
-  }
-  // Poll frequently but not too aggressively
-  setInterval(pollFrameInfo, 1000);
-  // Do an immediate poll on load
-  setTimeout(pollFrameInfo, 300);
 
-  function updateVisualizer() {
-    if (!analyser) return;
-    
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-    analyser.getByteFrequencyData(dataArray);
-    
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#222';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    const barWidth = canvas.width / bufferLength * 2.5;
-    let x = 0;
-    
-    for (let i = 0; i < bufferLength; i++) {
-      const barHeight = (dataArray[i] / 255.0) * canvas.height;
-      const hue = (i / bufferLength) * 120;
-      ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
-      ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
-      x += barWidth + 1;
-    }
-    
-    const average = dataArray.reduce((a, b) => a + b) / bufferLength;
-    ctx.fillStyle = '#aaa';
-    ctx.font = '12px monospace';
-    ctx.fillText(`Level: ${(average / 255 * 100).toFixed(1)}%`, 8, 14);
-    
-    requestAnimationFrame(updateVisualizer);
-  }
+      
+      // kick off initial autoplay attempt
+      tryAutoplay();
 
-  try {
-    // Get audio configuration from server
-    const audioConfig = await fetch('/audio-info').then(r => r.json());
+      // keep a light health check: if not playing after a bit, show overlay
+      setTimeout(() => {
+        if (player.paused || player.readyState < 3) {
+          overlay.style.display = 'flex';
+          statusEl.textContent = 'Tap to play';
+        }
+      }, 2000);
 
-    // Ensure AudioContext and nodes exist (in case creation failed earlier)
-    if (!audioCtx) {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: audioConfig.sampleRate });
-      gainNode = audioCtx.createGain();
-      analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 256;
-      gainNode.connect(analyser);
-      analyser.connect(audioCtx.destination);
-    }
-
-    // Fetch raw PCM stream and read chunks
-    const resp = await fetch('/audio');
-    if (!resp.body) throw new Error('ReadableStream not supported by this browser');
-    const reader = resp.body.getReader();
-
-  // Schedule playback to avoid gaps
-  let nextPlayTime = audioCtx.currentTime + 0.1;
-  const channelCount = audioConfig.channels || 1;
-  const MAX_LOOKAHEAD = 0.6; // seconds: don't schedule more than this far ahead
-
-    async function pump() {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        if (!value) continue;
-
-        // Ensure we get a contiguous ArrayBuffer for Int16Array
-        const ab = value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
-        const samples = new Int16Array(ab);
-        const frameCount = Math.floor(samples.length / channelCount);
-
-        const audioBuffer = audioCtx.createBuffer(channelCount, frameCount, audioConfig.sampleRate);
-
-        for (let ch = 0; ch < channelCount; ch++) {
-          const channelData = audioBuffer.getChannelData(ch);
-          for (let i = 0; i < frameCount; i++) {
-            const idx = i * channelCount + ch;
-            const s = samples[idx];
-            // normalize signed 16-bit
-            channelData[i] = s < 0 ? s / 32768 : s / 32767;
+      // Make double-tap toggle fullscreen on iOS Safari (simple)
+      let lastTap = 0;
+      player.addEventListener('touchend', (ev) => {
+        const now = Date.now();
+        if (now - lastTap < 300) {
+          // double tap
+          if (document.fullscreenElement) {
+            document.exitFullscreen().catch(()=>{});
+          } else {
+            player.requestFullscreen().catch(()=>{});
           }
         }
-
-        const src = audioCtx.createBufferSource();
-        src.buffer = audioBuffer;
-        src.connect(gainNode);
-
-        // throttle scheduling if we already have enough buffered audio
-        let now = audioCtx.currentTime;
-        if (nextPlayTime - now > MAX_LOOKAHEAD) {
-          // wait a short bit for playback to catch up
-          await new Promise((res) => setTimeout(res, 20));
-          continue; // re-evaluate by reading next chunk
-        }
-
-        // keep a small lookahead and avoid scheduling in the past
-        if (nextPlayTime < now + 0.05) nextPlayTime = now + 0.05;
-        src.start(nextPlayTime);
-        nextPlayTime += audioBuffer.duration;
-      }
-    }
-
-    pump().catch(e => console.error('Audio pump error:', e));
-    updateVisualizer();
-
-  } catch (err) {
-    console.error('Failed to initialize audio streaming:', err);
-  }
-})();
-</script>
+        lastTap = now;
+      });
+    })();
+  </script>
 </body>
 </html>

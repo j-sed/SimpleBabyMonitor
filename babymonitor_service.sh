@@ -1,29 +1,33 @@
 # copy unit (use sudo or be root)
-sudo tee /etc/systemd/system/babymonitor.service > /dev/null <<EOF
+#sudo tee /etc/systemd/system/babymonitor.service > /dev/null <<EOF
+sudo tee ~/.config/systemd/user/babymonitorUser.service > /dev/null <<EOF
 [Unit]
-Description=Baby Monitor (MJPEG + Audio) service
+Description=Baby Monitor (MJPEG + Audio) service ran as USER
 After=network-online.target
 
 [Service]
 Type=simple
-User=jsed
-Group=jsed
-WorkingDirectory=/home/jsed/PiCameraTutorials
-ExecStart=/home/jsed/PiCameraTutorials/venv/bin/python3 /home/jsed/PiCameraTutorials/mjpeg_server.py
+#Group=jsed
+#User=jsed
+WorkingDirectory=/home/jsed/PiCameraTutorials/
+ExecStart=/home/jsed/PiCameraTutorials/server.py
 Restart=on-failure
-RestartSec=15
-StartLimitBurst=5
-StartLimitInterval=120
-StandardOutput=journal
-StandardError=journal
+#RestartSec=30
+#StartLimitBurst=5
+#StartLimitInterval=200
+StandardOutput=inherit
+StandardError=inherit
 Environment=PYTHONUNBUFFERED=1
-
+Environment="PYTHONPATH=/home/jsed/PiCameraTutorials"
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
 EOF
 # reload systemd to pick up new unit
-sudo systemctl daemon-reload
+#sudo systemctl daemon-reload
+systemctl --user daemon-reload
 # enable on boot
-sudo systemctl enable babymonitor.service
+#sudo systemctl enable babymonitor.service
+systemctl --user enable babymonitorUser.service
 # start now
-sudo systemctl start babymonitor.service
+#sudo systemctl start babymonitor.service
+systemctl --user start babymonitorUser.service
