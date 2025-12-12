@@ -1,522 +1,756 @@
-<! doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html>
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1, viewport-fit=cover, user-scalable=no" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>SimpleBabyMonitor</title>
-  <meta name="description" content="Simple local baby monitor with HLS streaming and WiFi configuration" />
-  <style>
-    * {
-      box-sizing: border-box;
-    }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Baby Monitor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-    html, body {
-      height: 100%;
-      margin:  0;
-      background: #000;
-      -webkit-touch-callout: none;
-      -webkit-user-select: none;
-      -ms-user-select: none;
-      user-select: none;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
 
-    /* Tab Navigation */
-    .tabs-header {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 50px;
-      background: #1a1a1a;
-      border-bottom: 2px solid #333;
-      display: flex;
-      z-index: 100;
-    }
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 600px;
+            width: 100%;
+            overflow: hidden;
+        }
 
-    .tab-button {
-      flex: 1;
-      border: none;
-      background: #1a1a1a;
-      color: #999;
-      font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      border-bottom: 3px solid transparent;
-    }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
 
-    .tab-button. active {
-      color: #fff;
-      border-bottom-color: #0ea5e9;
-      background: #222;
-    }
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
 
-    .tab-button:hover {
-      color: #ccc;
-    }
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
 
-    /* Tab Content */
-    .tabs-container {
-      position: fixed;
-      top: 50px;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      overflow:  hidden;
-    }
+        .tabs {
+            display: flex;
+            border-bottom: 2px solid #f0f0f0;
+            background: #fafafa;
+        }
 
-    .tab-content {
-      position: absolute;
-      width: 100%;
-      height:  100%;
-      opacity: 0;
-      pointer-events: none;
-      transition:  opacity 0.3s ease;
-      overflow: auto;
-    }
+        .tab-button {
+            flex: 1;
+            padding: 15px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            color: #666;
+            transition: all 0.3s ease;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+        }
 
-    .tab-content.active {
-      opacity: 1;
-      pointer-events: auto;
-    }
+        .tab-button:hover {
+            color: #667eea;
+            background: #f5f5f5;
+        }
 
-    /* View Tab Styles */
-    .view-wrap {
-      position: relative;
-      width: 100%;
-      height:  100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: #000;
-    }
+        .tab-button.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
 
-    video {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      background: #000;
-    }
+        .tab-content {
+            display: none;
+            padding: 30px;
+            animation: fadeIn 0.3s ease;
+        }
 
-    .status {
-      position: absolute;
-      top: 12px;
-      left: 12px;
-      color: #eee;
-      font-size:  13px;
-      background: rgba(0, 0, 0, 0.6);
-      padding: 8px 12px;
-      border-radius: 8px;
-      backdrop-filter: blur(4px);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-    }
+        .tab-content.active {
+            display: block;
+        }
 
-    /* Setup Tab Styles */
-    . setup-container {
-      max-width: 600px;
-      margin: 20px auto;
-      padding: 20px;
-      background: #1a1a1a;
-      border-radius: 12px;
-    }
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
 
-    .setup-section {
-      margin-bottom: 30px;
-    }
+        .form-group {
+            margin-bottom: 20px;
+        }
 
-    . setup-section h2 {
-      color: #fff;
-      font-size: 20px;
-      margin-top: 0;
-      margin-bottom: 15px;
-      border-bottom: 2px solid #333;
-      padding-bottom: 10px;
-    }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+        }
 
-    .form-group {
-      margin-bottom: 15px;
-    }
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s ease;
+        }
 
-    . form-group label {
-      display: block;
-      color: #ccc;
-      font-size: 14px;
-      margin-bottom: 6px;
-      font-weight: 500;
-    }
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
 
-    .form-group input {
-      width:  100%;
-      padding: 12px;
-      background: #2a2a2a;
-      border: 1px solid #444;
-      border-radius: 6px;
-      color: #fff;
-      font-size: 16px;
-      transition: border-color 0.3s ease;
-    }
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 25px;
+        }
 
-    .form-group input:focus {
-      outline: none;
-      border-color: #0ea5e9;
-      background: #333;
-    }
+        .btn {
+            flex: 1;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
 
-    .form-group input:: placeholder {
-      color: #666;
-    }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
 
-    .button-group {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-      margin-top: 20px;
-    }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
 
-    button {
-      padding: 12px 20px;
-      border: none;
-      border-radius: 6px;
-      font-size:  16px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.3s ease;
-    }
+        .btn-primary:active {
+            transform: translateY(0);
+        }
 
-    . btn-primary {
-      background: #0ea5e9;
-      color: #000;
-    }
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
 
-    .btn-primary:hover: not(:disabled) {
-      background: #0284c7;
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(14, 165, 233, 0.4);
-    }
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
 
-    .btn-primary:disabled {
-      background: #4b5563;
-      cursor: not-allowed;
-      opacity: 0.6;
-    }
+        .btn-small {
+            padding: 10px 15px;
+            font-size: 12px;
+        }
 
-    .btn-secondary {
-      background: #444;
-      color: #fff;
-    }
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            font-weight: 500;
+            display: none;
+        }
 
-    .btn-secondary:hover:not(:disabled) {
-      background: #555;
-    }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
 
-    .status-message {
-      padding: 12px;
-      border-radius: 6px;
-      margin-bottom: 15px;
-      font-size: 14px;
-      display: none;
-    }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
 
-    .status-message.show {
-      display: block;
-    }
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+            display: block;
+        }
 
-    .status-message.success {
-      background: rgba(34, 197, 94, 0.2);
-      color: #86efac;
-      border: 1px solid #22c55e;
-    }
+        .stream-container {
+            width: 100%;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            margin-bottom: 20px;
+            aspect-ratio: 16 / 9;
+        }
 
-    .status-message.error {
-      background: rgba(239, 68, 68, 0.2);
-      color: #fca5a5;
-      border:  1px solid #ef4444;
-    }
+        .stream-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
 
-    .status-message.loading {
-      background: rgba(14, 165, 233, 0.2);
-      color: #7dd3fc;
-      border: 1px solid #0ea5e9;
-    }
+        .stream-container.loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
 
-    . info-box {
-      background: #2a2a2a;
-      border-left: 4px solid #0ea5e9;
-      padding: 12px;
-      border-radius: 4px;
-      margin-top: 15px;
-      font-size: 13px;
-      color: #aaa;
-      line-height: 1.6;
-    }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
 
-    @media (max-width: 600px) {
-      .setup-container {
-        margin: 10px;
-        padding: 15px;
-      }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
 
-      . button-group {
-        grid-template-columns: 1fr;
-      }
+        .wifi-network-list {
+            margin: 20px 0;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            max-height: 300px;
+            overflow-y: auto;
+            background: #f9f9f9;
+        }
 
-      .tab-button {
-        font-size: 14px;
-      }
-    }
-  </style>
+        .wifi-network-item {
+            padding: 12px 15px;
+            border-bottom: 1px solid #e0e0e0;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .wifi-network-item:last-child {
+            border-bottom: none;
+        }
+
+        .wifi-network-item:hover {
+            background: #f0f0f0;
+        }
+
+        .wifi-network-item.selected {
+            background: #e8f0fe;
+            border-left: 4px solid #667eea;
+            padding-left: 11px;
+        }
+
+        .wifi-network-info {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .wifi-icon {
+            font-size: 16px;
+        }
+
+        .wifi-details {
+            flex: 1;
+        }
+
+        .wifi-name {
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+            word-break: break-all;
+        }
+
+        .wifi-signal {
+            font-size: 12px;
+            color: #999;
+            margin-top: 2px;
+        }
+
+        .wifi-signal-bars {
+            display: inline-block;
+            margin-left: 5px;
+        }
+
+        .wifi-security {
+            font-size: 12px;
+            color: #999;
+            background: #e0e0e0;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-left: 8px;
+        }
+
+        .refresh-button-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .btn-refresh {
+            padding: 10px 15px;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-refresh.loading {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid #f3f3f3;
+            border-top-color: currentColor;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        .no-networks {
+            padding: 20px;
+            text-align: center;
+            color: #999;
+            font-size: 14px;
+        }
+
+        .info-text {
+            font-size: 12px;
+            color: #999;
+            margin-top: 8px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+
+        .control-item {
+            flex: 1;
+            min-width: 120px;
+        }
+
+        .control-item label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+        }
+
+        .control-item input[type="range"] {
+            width: 100%;
+        }
+
+        .control-item input[type="range"]::-webkit-slider-thumb {
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #667eea;
+            cursor: pointer;
+        }
+
+        .control-item input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #667eea;
+            cursor: pointer;
+            border: none;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-box {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #999;
+            margin-bottom: 5px;
+        }
+
+        .stat-value {
+            font-size: 20px;
+            font-weight: bold;
+            color: #667eea;
+        }
+    </style>
 </head>
 <body>
-  <!-- Tab Navigation -->
-  <div class="tabs-header">
-    <button class="tab-button active" data-tab="view">
-      📹 View
-    </button>
-    <button class="tab-button" data-tab="setup">
-      ⚙️ Setup
-    </button>
-  </div>
-
-  <!-- Tab Content -->
-  <div class="tabs-container">
-    <!-- View Tab -->
-    <div class="tab-content active" id="view-tab">
-      <div class="view-wrap">
-        <video id="player" playsinline webkit-playsinline muted autoplay controls>
-          <source src="/hls/stream.m3u8" type="application/vnd.apple.mpegurl">
-          Your browser does not support HLS playback natively. 
-        </video>
-        <div class="status" id="status">Connecting…</div>
-      </div>
-    </div>
-
-    <!-- Setup Tab -->
-    <div class="tab-content" id="setup-tab">
-      <div class="setup-container">
-        <div class="setup-section">
-          <h2>WiFi Configuration</h2>
-          
-          <div id="configStatus" class="status-message"></div>
-
-          <div class="form-group">
-            <label for="ssid">Network Name (SSID)</label>
-            <input
-              type="text"
-              id="ssid"
-              placeholder="Enter WiFi network name"
-              autocomplete="off"
-            />
-          </div>
-
-          <div class="form-group">
-            <label for="password">Password</label>
-            <input
-              type="password"
-              id="password"
-              placeholder="Enter WiFi password (leave empty for open networks)"
-              autocomplete="off"
-            />
-          </div>
-
-          <div class="button-group">
-            <button class="btn-primary" id="configureBtn">
-              Connect WiFi
-            </button>
-            <button class="btn-secondary" id="clearBtn">
-              Clear
-            </button>
-          </div>
-
-          <div class="info-box">
-            <strong>ℹ️ How it works:</strong><br>
-            Enter your WiFi network name and password above.  The device will attempt to connect to the specified network.  Make sure the network is available and the credentials are correct.
-          </div>
+    <div class="container">
+        <div class="header">
+            <h1>👶 Baby Monitor</h1>
+            <p>Simple streaming and monitoring solution</p>
         </div>
 
-        <div class="setup-section">
-          <h2>Device Information</h2>
-          <div class="info-box">
-            <strong>🍓 Raspberry Pi Camera Monitor</strong><br>
-            Local streaming via HLS<br>
-            <br>
-            <strong>Access:</strong> Connect via ZeroTier for remote access<br>
-            <strong>Port:</strong> 8000<br>
-            <strong>Streaming:</strong> /hls/stream.m3u8
-          </div>
+        <div class="tabs">
+            <button class="tab-button active" data-tab="stream">Stream</button>
+            <button class="tab-button" data-tab="control">Control</button>
+            <button class="tab-button" data-tab="setup">Setup</button>
         </div>
-      </div>
+
+        <!-- Stream Tab -->
+        <div id="stream" class="tab-content active">
+            <div class="stream-container loading" id="streamContainer">
+                <div class="spinner"></div>
+            </div>
+            <div class="status" id="streamStatus"></div>
+            <button class="btn btn-primary" id="startStreamBtn">Start Stream</button>
+        </div>
+
+        <!-- Control Tab -->
+        <div id="control" class="tab-content">
+            <div class="status" id="controlStatus"></div>
+            <div class="controls">
+                <div class="control-item">
+                    <label for="brightnessControl">Brightness</label>
+                    <input type="range" id="brightnessControl" min="0" max="255" value="128">
+                </div>
+                <div class="control-item">
+                    <label for="contrastControl">Contrast</label>
+                    <input type="range" id="contrastControl" min="0" max="255" value="128">
+                </div>
+            </div>
+            <div class="controls">
+                <div class="control-item">
+                    <label for="saturationControl">Saturation</label>
+                    <input type="range" id="saturationControl" min="0" max="255" value="128">
+                </div>
+                <div class="control-item">
+                    <label for="qualityControl">Quality</label>
+                    <input type="range" id="qualityControl" min="10" max="63" value="31">
+                </div>
+            </div>
+            <button class="btn btn-primary" id="applyControlsBtn">Apply Settings</button>
+        </div>
+
+        <!-- Setup Tab -->
+        <div id="setup" class="tab-content">
+            <div class="status" id="setupStatus"></div>
+
+            <!-- WiFi Network Selection -->
+            <div class="form-group">
+                <label>WiFi Network Selection</label>
+                <div class="refresh-button-container">
+                    <button class="btn btn-secondary btn-small btn-refresh" id="refreshNetworksBtn">
+                        <span class="refresh-icon">🔄</span>
+                        <span>Scan Networks</span>
+                    </button>
+                    <div style="flex: 1;"></div>
+                </div>
+                <div class="info-text">Tap a network to select it, then enter the password below</div>
+                <div class="wifi-network-list" id="wifiNetworkList">
+                    <div class="no-networks">No networks found. Click "Scan Networks" to search.</div>
+                </div>
+                <div class="info-text" style="margin-top: 15px;">
+                    <strong>Selected Network:</strong> <span id="selectedNetworkDisplay">None</span>
+                </div>
+            </div>
+
+            <!-- WiFi Password -->
+            <div class="form-group">
+                <label for="wifiPassword">WiFi Password</label>
+                <input type="password" id="wifiPassword" placeholder="Enter WiFi password">
+            </div>
+
+            <!-- WiFi Connection Status -->
+            <div class="form-group">
+                <label for="wifiStatus">Connection Status</label>
+                <input type="text" id="wifiStatus" placeholder="Not connected" readonly style="background: #f5f5f5; cursor: not-allowed;">
+            </div>
+
+            <!-- Advanced Settings -->
+            <div class="form-group">
+                <label for="deviceName">Device Name</label>
+                <input type="text" id="deviceName" placeholder="baby-monitor-1">
+            </div>
+
+            <div class="form-group">
+                <label for="streamPort">Stream Port</label>
+                <input type="number" id="streamPort" placeholder="81" value="81">
+            </div>
+
+            <div class="form-group">
+                <label for="resolution">Resolution</label>
+                <select id="resolution">
+                    <option value="640x480">640x480</option>
+                    <option value="800x600">800x600</option>
+                    <option value="1024x768">1024x768</option>
+                    <option value="1280x720" selected>1280x720</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="frameRate">Frame Rate (FPS)</label>
+                <input type="number" id="frameRate" placeholder="30" value="30" min="1" max="60">
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="button-group">
+                <button class="btn btn-primary" id="saveSetupBtn">Save Settings</button>
+                <button class="btn btn-secondary" id="resetSetupBtn">Reset</button>
+            </div>
+        </div>
     </div>
-  </div>
 
-  <script>
-    // Tab switching logic
-    document.querySelectorAll('.tab-button').forEach(button => {
-      button.addEventListener('click', () => {
-        const tabName = button.dataset.tab;
-
-        // Hide all tabs
-        document.querySelectorAll('.tab-content').forEach(tab => {
-          tab.classList. remove('active');
+    <script>
+        // Tab functionality
+        document.querySelectorAll('.tab-button').forEach(button => {
+            button.addEventListener('click', function() {
+                const tabName = this.dataset.tab;
+                
+                // Hide all tabs
+                document.querySelectorAll('.tab-content').forEach(tab => {
+                    tab.classList.remove('active');
+                });
+                
+                // Remove active class from all buttons
+                document.querySelectorAll('.tab-button').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                
+                // Show selected tab
+                document.getElementById(tabName).classList.add('active');
+                this.classList.add('active');
+            });
         });
 
-        // Deactivate all buttons
-        document.querySelectorAll('.tab-button').forEach(btn => {
-          btn.classList. remove('active');
+        // WiFi Network Management
+        let selectedNetwork = null;
+
+        // Scan Networks button
+        document.getElementById('refreshNetworksBtn').addEventListener('click', function() {
+            const btn = this;
+            const icon = btn.querySelector('.refresh-icon');
+            
+            // Add loading state
+            btn.classList.add('loading');
+            btn.disabled = true;
+            icon.style.display = 'inline-block';
+            icon.style.animation = 'spin 1s linear infinite';
+            
+            // Simulate network scanning
+            setTimeout(() => {
+                displayNetworks();
+                btn.classList.remove('loading');
+                btn.disabled = false;
+                icon.style.animation = 'none';
+                
+                // Show success message
+                const statusEl = document.getElementById('setupStatus');
+                statusEl.className = 'status info';
+                statusEl.textContent = 'Networks scanned successfully';
+                setTimeout(() => {
+                    statusEl.className = 'status';
+                }, 3000);
+            }, 2000);
         });
 
-        // Show selected tab
-        document.getElementById(`${tabName}-tab`).classList.add('active');
-        button.classList.add('active');
-      });
-    });
+        // Sample WiFi networks
+        const mockNetworks = [
+            { ssid: 'HomeNetwork', strength: 90, security: 'WPA2', hidden: false },
+            { ssid: 'GuestWiFi', strength: 75, security: 'WPA2', hidden: false },
+            { ssid: 'NeighborNet', strength: 45, security: 'WPA3', hidden: false },
+            { ssid: 'CoffeeshopWifi', strength: 60, security: 'Open', hidden: false },
+        ];
 
-    // WiFi Configuration
-    const configureBtn = document.getElementById('configureBtn');
-    const clearBtn = document.getElementById('clearBtn');
-    const ssidInput = document.getElementById('ssid');
-    const passwordInput = document.getElementById('password');
-    const configStatus = document.getElementById('configStatus');
-
-    function showStatus(message, type) {
-      configStatus.textContent = message;
-      configStatus.className = `status-message show ${type}`;
-      if (type !== 'loading') {
-        setTimeout(() => {
-          configStatus. classList.remove('show');
-        }, 5000);
-      }
-    }
-
-    configureBtn.addEventListener('click', async () => {
-      const ssid = ssidInput.value.trim();
-      const password = passwordInput.value;
-
-      if (!ssid) {
-        showStatus('❌ Please enter a network name', 'error');
-        return;
-      }
-
-      configureBtn.disabled = true;
-      showStatus('⏳ Configuring WiFi connection...', 'loading');
-
-      try {
-        const response = await fetch('/api/configure-wifi', {
-          method:  'POST',
-          headers:  {
-            'Content-Type':  'application/json',
-          },
-          body: JSON.stringify({
-            ssid: ssid,
-            password: password,
-          }),
-        });
-
-        const data = await response.json();
-
-        if (response.ok) {
-          showStatus(`✅ WiFi configuration initiated for "${ssid}"`, 'success');
-          ssidInput.value = '';
-          passwordInput.value = '';
-        } else {
-          showStatus(`❌ Configuration failed: ${data.message}`, 'error');
-        }
-      } catch (error) {
-        showStatus(`❌ Error:  ${error.message}`, 'error');
-      } finally {
-        configureBtn.disabled = false;
-      }
-    });
-
-    clearBtn.addEventListener('click', () => {
-      ssidInput.value = '';
-      passwordInput.value = '';
-      configStatus.classList.remove('show');
-    });
-
-    // Allow Enter key to submit
-    passwordInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        configureBtn.click();
-      }
-    });
-
-    // Video streaming logic (from original)
-    (function () {
-      const player = document. getElementById('player');
-      const statusEl = document.getElementById('status');
-
-      let trying = 0;
-
-      player.addEventListener('playing', () => {
-        statusEl.textContent = '📹 Live';
-      });
-
-      player.addEventListener('waiting', () => {
-        statusEl.textContent = '⏳ Buffering…';
-      });
-
-      player.addEventListener('stalled', () => {
-        statusEl.textContent = '🔄 Reconnecting…';
-      });
-
-      player.addEventListener('error', () => {
-        statusEl.textContent = '⚠️ Playback error';
-        retryLoad();
-      });
-
-      async function tryAutoplay() {
-        try {
-          await player.play();
-          statusEl.textContent = '📹 Live';
-        } catch (e) {
-          statusEl.textContent = '▶️ Tap to play';
-        }
-      }
-
-      function retryLoad() {
-        trying++;
-        const delay = Math.min(30000, 500 * Math.pow(2, trying));
-        setTimeout(() => {
-          try {
-            const src = '/hls/stream.m3u8? cb=' + Date.now();
-            const source = player.querySelector('source');
-            if (source) {
-              source. src = src;
-            } else {
-              player.src = src;
+        function displayNetworks() {
+            const networkList = document.getElementById('wifiNetworkList');
+            
+            if (mockNetworks.length === 0) {
+                networkList.innerHTML = '<div class="no-networks">No networks found</div>';
+                return;
             }
-            player.load();
-            player.play().catch(() => {});
-          } catch (e) {
-            retryLoad();
-          }
-        }, delay);
-      }
 
-      tryAutoplay();
+            networkList.innerHTML = mockNetworks.map((network, index) => {
+                const signalBars = getSignalBars(network.strength);
+                const isSelected = selectedNetwork && selectedNetwork.ssid === network.ssid ? 'selected' : '';
+                
+                return `
+                    <div class="wifi-network-item ${isSelected}" data-index="${index}" data-ssid="${network.ssid}">
+                        <div class="wifi-network-info">
+                            <span class="wifi-icon">📶</span>
+                            <div class="wifi-details">
+                                <div class="wifi-name">${network.ssid}</div>
+                                <div class="wifi-signal">
+                                    Signal: ${network.strength}%
+                                    <span class="wifi-signal-bars">${signalBars}</span>
+                                    <span class="wifi-security">${network.security}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
 
-      setTimeout(() => {
-        if (player.paused || player.readyState < 3) {
-          statusEl.textContent = '▶️ Tap to play';
+            // Add click handlers to network items
+            document.querySelectorAll('.wifi-network-item').forEach(item => {
+                item.addEventListener('click', function() {
+                    const index = this.dataset.index;
+                    const network = mockNetworks[index];
+                    
+                    // Remove previous selection
+                    document.querySelectorAll('.wifi-network-item').forEach(el => {
+                        el.classList.remove('selected');
+                    });
+                    
+                    // Select current network
+                    this.classList.add('selected');
+                    selectedNetwork = network;
+                    
+                    // Update display
+                    document.getElementById('selectedNetworkDisplay').textContent = network.ssid;
+                    
+                    // Clear password field
+                    document.getElementById('wifiPassword').value = '';
+                    document.getElementById('wifiPassword').focus();
+                });
+            });
         }
-      }, 2000);
 
-      let lastTap = 0;
-      player.addEventListener('touchend', (ev) => {
-        const now = Date.now();
-        if (now - lastTap < 300) {
-          if (document.fullscreenElement) {
-            document.exitFullscreen().catch(() => {});
-          } else {
-            player.requestFullscreen().catch(() => {});
-          }
+        function getSignalBars(strength) {
+            if (strength >= 80) return '▓▓▓▓';
+            if (strength >= 60) return '▓▓▓░';
+            if (strength >= 40) return '▓▓░░';
+            return '▓░░░';
         }
-        lastTap = now;
-      });
-    })();
-  </script>
+
+        // Setup form handlers
+        document.getElementById('saveSetupBtn').addEventListener('click', function() {
+            if (!selectedNetwork) {
+                showStatus('setupStatus', 'Please select a WiFi network', 'error');
+                return;
+            }
+
+            const password = document.getElementById('wifiPassword').value;
+            if (!password) {
+                showStatus('setupStatus', 'Please enter the WiFi password', 'error');
+                return;
+            }
+
+            // Save settings (mock)
+            const settings = {
+                network: selectedNetwork.ssid,
+                deviceName: document.getElementById('deviceName').value || 'baby-monitor',
+                streamPort: document.getElementById('streamPort').value,
+                resolution: document.getElementById('resolution').value,
+                frameRate: document.getElementById('frameRate').value
+            };
+
+            console.log('Saving settings:', settings);
+            
+            // Simulate saving
+            document.getElementById('wifiStatus').value = `Connected to ${selectedNetwork.ssid}`;
+            showStatus('setupStatus', 'Settings saved successfully!', 'success');
+        });
+
+        document.getElementById('resetSetupBtn').addEventListener('click', function() {
+            document.getElementById('wifiPassword').value = '';
+            document.getElementById('deviceName').value = '';
+            document.getElementById('frameRate').value = '30';
+            document.getElementById('resolution').value = '1280x720';
+            document.getElementById('streamPort').value = '81';
+            document.querySelectorAll('.wifi-network-item').forEach(el => {
+                el.classList.remove('selected');
+            });
+            selectedNetwork = null;
+            document.getElementById('selectedNetworkDisplay').textContent = 'None';
+            document.getElementById('wifiStatus').value = '';
+            showStatus('setupStatus', 'Form reset', 'info');
+        });
+
+        // Stream controls
+        document.getElementById('startStreamBtn').addEventListener('click', function() {
+            const container = document.getElementById('streamContainer');
+            container.classList.add('loading');
+            container.innerHTML = '<div class="spinner"></div>';
+            
+            setTimeout(() => {
+                container.classList.remove('loading');
+                // In a real app, this would display the actual video stream
+                container.innerHTML = '<img src="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22640%22 height=%22360%22%3E%3Crect fill=%22%23333%22 width=%22640%22 height=%22360%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 font-size=%2224%22 fill=%22white%22 text-anchor=%22middle%22 dominant-baseline=%22middle%22%3ELive Stream (Ready)%3C/text%3E%3C/svg%3E">';
+                showStatus('streamStatus', 'Stream started', 'success');
+            }, 1500);
+        });
+
+        // Control settings
+        document.getElementById('applyControlsBtn').addEventListener('click', function() {
+            const controls = {
+                brightness: document.getElementById('brightnessControl').value,
+                contrast: document.getElementById('contrastControl').value,
+                saturation: document.getElementById('saturationControl').value,
+                quality: document.getElementById('qualityControl').value
+            };
+
+            console.log('Applying controls:', controls);
+            showStatus('controlStatus', 'Camera settings applied', 'success');
+        });
+
+        // Utility function to show status messages
+        function showStatus(elementId, message, type) {
+            const statusEl = document.getElementById(elementId);
+            statusEl.className = `status ${type}`;
+            statusEl.textContent = message;
+            
+            if (type !== 'error') {
+                setTimeout(() => {
+                    statusEl.className = 'status';
+                }, 3000);
+            }
+        }
+
+        // Initialize - optionally auto-load networks on page load
+        window.addEventListener('load', function() {
+            // Uncomment to auto-scan networks on load
+            // displayNetworks();
+        });
+    </script>
 </body>
 </html>
