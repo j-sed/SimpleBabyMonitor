@@ -1,10 +1,12 @@
 #!/home/jsed/PiCameraTutorials/venv/bin/python3
 """
-hls_stream.py
+server.py
 
 Produce HLS (stream.m3u8 + fragments) with camera video and embedded audio.
 Audio is captured by ffmpeg (ALSA "default" device) and encoded to low-quality AAC
 so the HLS stream contains both video and audio.
+
+Also provides WiFi configuration endpoints for setting up wireless connections via web UI.
 
 Notes:
 - Requires ffmpeg on the system with ALSA support.
@@ -20,6 +22,7 @@ import logging
 import os
 import socket
 import socketserver
+import subprocess
 from http import server
 from threading import Condition
 import time
@@ -33,6 +36,9 @@ logging.basicConfig(level=logging.INFO,
 
 # unix timestamp of last written frame; updated by StreamingOutput.write()
 last_frame_time = 0.0
+
+# Path to WiFi configuration script
+WIFI_CONFIG_SCRIPT = '/home/jsed/AccessPopup/installconfig.sh'
 
 class StreamingOutput(io.BufferedIOBase):
     def __init__(self):
@@ -57,6 +63,10 @@ class StreamingHandler(server.BaseHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Headers', 'Range,Content-Type')
         self.send_header('Access-Control-Expose-Headers', 'Content-Range,Accept-Ranges,Content-Length')
+
+    def log_message(self, format, *args):
+        """Override to use logging instead of stderr"""
+        logging.info(format % args)
 
     def do_GET(self):
         # Convenience: path without query
@@ -143,7 +153,7 @@ class StreamingHandler(server.BaseHTTPRequestHandler):
                     ctype = 'application/vnd.apple.mpegurl'
                 elif ext in ('.ts', '.mpegts'):
                     ctype = 'video/MP2T'
-                elif	 ext in ('.m4s', '.mp4'):
+                elif ext in ('.m4s', '.mp4'):
                     ctype = 'video/mp4'
                 elif ext in ('.aac',):
                     ctype = 'audio/aac'
@@ -183,6 +193,84 @@ class StreamingHandler(server.BaseHTTPRequestHandler):
             logging.warning(f'Error while serving static file {path}: {e}')
 
         # If we get here, nothing matched: 404
+        self.send_error(404)
+        self.end_headers()
+
+    def do_POST(self):
+        """Handle POST requests for configuration endpoints"""
+        path = self.path.split('?', 1)[0]
+
+        if path == '/api/configure-wifi':
+            try:
+                content_length = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(content_length)
+                data = json.loads(body.decode('utf-8'))
+
+                ssid = data.get('ssid', '')
+                password = data.get('password', '')
+
+                if not ssid:
+                    self.send_response(400)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    response = json.dumps({"status": "error", "message": "SSID is required"})
+                    self.wfile.write(response.encode('utf-8'))
+                    return
+
+                # Call the WiFi configuration script
+                logging.info(f"Configuring WiFi: {ssid}")
+                result = subprocess.run(
+                    [WIFI_CONFIG_SCRIPT, ssid, password],
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+
+                if result.returncode == 0:
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    response = json.dumps({
+                        "status": "success",
+                        "message": f"WiFi configuration initiated for {ssid}",
+                        "output": result.stdout
+                    })
+                    self.wfile.write(response.encode('utf-8'))
+                    logging.info(f"WiFi configuration successful for {ssid}")
+                else:
+                    self.send_response(500)
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    response = json.dumps({
+                        "status": "error",
+                        "message": "WiFi configuration failed",
+                        "error": result.stderr
+                    })
+                    self.wfile.write(response.encode('utf-8'))
+                    logging.error(f"WiFi configuration failed: {result.stderr}")
+
+            except json.JSONDecodeError:
+                self.send_response(400)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                response = json.dumps({"status": "error", "message": "Invalid JSON"})
+                self.wfile.write(response.encode('utf-8'))
+            except subprocess.TimeoutExpired:
+                self.send_response(500)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                response = json.dumps({"status": "error", "message": "Configuration timeout"})
+                self.wfile.write(response.encode('utf-8'))
+            except Exception as e:
+                logging.error(f"Error handling WiFi configuration: {e}")
+                self.send_response(500)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                response = json.dumps({"status": "error", "message": str(e)})
+                self.wfile.write(response.encode('utf-8'))
+            return
+
+        # Unknown POST endpoint
         self.send_error(404)
         self.end_headers()
 
