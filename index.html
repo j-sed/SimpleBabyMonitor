@@ -1,469 +1,522 @@
-<!DOCTYPE html>
+<! doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Simple Baby Monitor</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>SimpleBabyMonitor</title>
+  <meta name="description" content="Simple local baby monitor with HLS streaming and WiFi configuration" />
+  <style>
+    * {
+      box-sizing: border-box;
+    }
 
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f5f5f5;
-            color: #333;
-        }
+    html, body {
+      height: 100%;
+      margin:  0;
+      background: #000;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
 
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            background-color: white;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            border-radius: 8px;
-            overflow: hidden;
-        }
+    /* Tab Navigation */
+    .tabs-header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 50px;
+      background: #1a1a1a;
+      border-bottom: 2px solid #333;
+      display: flex;
+      z-index: 100;
+    }
 
-        .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 20px;
-            text-align: center;
-        }
+    .tab-button {
+      flex: 1;
+      border: none;
+      background: #1a1a1a;
+      color: #999;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      border-bottom: 3px solid transparent;
+    }
 
-        .header h1 {
-            font-size: 28px;
-            margin-bottom: 5px;
-        }
+    .tab-button. active {
+      color: #fff;
+      border-bottom-color: #0ea5e9;
+      background: #222;
+    }
 
-        .tab-container {
-            display: flex;
-            border-bottom: 2px solid #e0e0e0;
-        }
+    .tab-button:hover {
+      color: #ccc;
+    }
 
-        .tab-button {
-            flex: 1;
-            padding: 15px 20px;
-            background-color: #f9f9f9;
-            border: none;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: 500;
-            color: #666;
-            transition: all 0.3s ease;
-            border-bottom: 3px solid transparent;
-        }
+    /* Tab Content */
+    .tabs-container {
+      position: fixed;
+      top: 50px;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      overflow:  hidden;
+    }
 
-        .tab-button:hover {
-            background-color: #f0f0f0;
-        }
+    .tab-content {
+      position: absolute;
+      width: 100%;
+      height:  100%;
+      opacity: 0;
+      pointer-events: none;
+      transition:  opacity 0.3s ease;
+      overflow: auto;
+    }
 
-        .tab-button.active {
-            color: #667eea;
-            border-bottom-color: #667eea;
-            background-color: white;
-        }
+    .tab-content.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
 
-        .tab-content {
-            display: none;
-            padding: 30px;
-            animation: fadeIn 0.3s ease;
-        }
+    /* View Tab Styles */
+    .view-wrap {
+      position: relative;
+      width: 100%;
+      height:  100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+    }
 
-        .tab-content.active {
-            display: block;
-        }
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #000;
+    }
 
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-            }
-            to {
-                opacity: 1;
-            }
-        }
+    .status {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      color: #eee;
+      font-size:  13px;
+      background: rgba(0, 0, 0, 0.6);
+      padding: 8px 12px;
+      border-radius: 8px;
+      backdrop-filter: blur(4px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
 
-        .view-section {
-            text-align: center;
-        }
+    /* Setup Tab Styles */
+    . setup-container {
+      max-width: 600px;
+      margin: 20px auto;
+      padding: 20px;
+      background: #1a1a1a;
+      border-radius: 12px;
+    }
 
-        .video-container {
-            background-color: #000;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
-            min-height: 400px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
+    .setup-section {
+      margin-bottom: 30px;
+    }
 
-        #videoFeed {
-            max-width: 100%;
-            max-height: 400px;
-            border-radius: 4px;
-        }
+    . setup-section h2 {
+      color: #fff;
+      font-size: 20px;
+      margin-top: 0;
+      margin-bottom: 15px;
+      border-bottom: 2px solid #333;
+      padding-bottom: 10px;
+    }
 
-        .status {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
-            margin-top: 20px;
-        }
+    .form-group {
+      margin-bottom: 15px;
+    }
 
-        .status-item {
-            background-color: #f9f9f9;
-            padding: 15px;
-            border-radius: 6px;
-            border-left: 4px solid #667eea;
-        }
+    . form-group label {
+      display: block;
+      color: #ccc;
+      font-size: 14px;
+      margin-bottom: 6px;
+      font-weight: 500;
+    }
 
-        .status-item h3 {
-            font-size: 12px;
-            color: #999;
-            margin-bottom: 8px;
-            text-transform: uppercase;
-        }
+    .form-group input {
+      width:  100%;
+      padding: 12px;
+      background: #2a2a2a;
+      border: 1px solid #444;
+      border-radius: 6px;
+      color: #fff;
+      font-size: 16px;
+      transition: border-color 0.3s ease;
+    }
 
-        .status-item p {
-            font-size: 18px;
-            font-weight: bold;
-            color: #333;
-        }
+    .form-group input:focus {
+      outline: none;
+      border-color: #0ea5e9;
+      background: #333;
+    }
 
-        .setup-form {
-            display: grid;
-            gap: 20px;
-        }
+    .form-group input:: placeholder {
+      color: #666;
+    }
 
-        .form-group {
-            display: flex;
-            flex-direction: column;
-        }
+    .button-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 20px;
+    }
 
-        .form-group label {
-            font-weight: 600;
-            margin-bottom: 8px;
-            color: #333;
-        }
+    button {
+      padding: 12px 20px;
+      border: none;
+      border-radius: 6px;
+      font-size:  16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
 
-        .form-group input,
-        .form-group select {
-            padding: 10px 12px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 14px;
-            transition: border-color 0.3s ease;
-        }
+    . btn-primary {
+      background: #0ea5e9;
+      color: #000;
+    }
 
-        .form-group input:focus,
-        .form-group select:focus {
-            outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
+    .btn-primary:hover: not(:disabled) {
+      background: #0284c7;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(14, 165, 233, 0.4);
+    }
 
-        .button-group {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            margin-top: 10px;
-        }
+    .btn-primary:disabled {
+      background: #4b5563;
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
 
-        button {
-            padding: 12px 20px;
-            border: none;
-            border-radius: 4px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
+    .btn-secondary {
+      background: #444;
+      color: #fff;
+    }
 
-        .btn-primary {
-            background-color: #667eea;
-            color: white;
-        }
+    .btn-secondary:hover:not(:disabled) {
+      background: #555;
+    }
 
-        .btn-primary:hover {
-            background-color: #5568d3;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
-        }
+    .status-message {
+      padding: 12px;
+      border-radius: 6px;
+      margin-bottom: 15px;
+      font-size: 14px;
+      display: none;
+    }
 
-        .btn-secondary {
-            background-color: #e0e0e0;
-            color: #333;
-        }
+    .status-message.show {
+      display: block;
+    }
 
-        .btn-secondary:hover {
-            background-color: #d0d0d0;
-        }
+    .status-message.success {
+      background: rgba(34, 197, 94, 0.2);
+      color: #86efac;
+      border: 1px solid #22c55e;
+    }
 
-        .info-box {
-            background-color: #e8f4f8;
-            border-left: 4px solid #0097a7;
-            padding: 15px;
-            border-radius: 4px;
-            margin-bottom: 20px;
-        }
+    .status-message.error {
+      background: rgba(239, 68, 68, 0.2);
+      color: #fca5a5;
+      border:  1px solid #ef4444;
+    }
 
-        .info-box h3 {
-            color: #0097a7;
-            margin-bottom: 8px;
-            font-size: 14px;
-        }
+    .status-message.loading {
+      background: rgba(14, 165, 233, 0.2);
+      color: #7dd3fc;
+      border: 1px solid #0ea5e9;
+    }
 
-        .info-box p {
-            color: #555;
-            font-size: 13px;
-            line-height: 1.6;
-        }
+    . info-box {
+      background: #2a2a2a;
+      border-left: 4px solid #0ea5e9;
+      padding: 12px;
+      border-radius: 4px;
+      margin-top: 15px;
+      font-size: 13px;
+      color: #aaa;
+      line-height: 1.6;
+    }
 
-        .success-message {
-            background-color: #c8e6c9;
-            border-left: 4px solid #4caf50;
-            padding: 15px;
-            border-radius: 4px;
-            margin-bottom: 20px;
-            display: none;
-            color: #2e7d32;
-        }
+    @media (max-width: 600px) {
+      .setup-container {
+        margin: 10px;
+        padding: 15px;
+      }
 
-        .success-message.show {
-            display: block;
-        }
-    </style>
+      . button-group {
+        grid-template-columns: 1fr;
+      }
+
+      .tab-button {
+        font-size: 14px;
+      }
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>👶 Simple Baby Monitor</h1>
-            <p>Real-time monitoring and setup</p>
-        </div>
+  <!-- Tab Navigation -->
+  <div class="tabs-header">
+    <button class="tab-button active" data-tab="view">
+      📹 View
+    </button>
+    <button class="tab-button" data-tab="setup">
+      ⚙️ Setup
+    </button>
+  </div>
 
-        <div class="tab-container">
-            <button class="tab-button active" onclick="switchTab('view')">
-                📺 View
-            </button>
-            <button class="tab-button" onclick="switchTab('setup')">
-                ⚙️ Setup
-            </button>
-        </div>
-
-        <!-- View Tab -->
-        <div id="view" class="tab-content active">
-            <div class="view-section">
-                <h2 style="margin-bottom: 20px; color: #333;">Live Monitor</h2>
-                <div class="video-container">
-                    <div id="videoPlaceholder" style="color: white; text-align: center;">
-                        <p>📹 Video feed will appear here</p>
-                        <p style="font-size: 12px; margin-top: 10px; color: #999;">Configure video source in Setup tab</p>
-                    </div>
-                    <img id="videoFeed" style="display: none;" alt="Video Feed">
-                </div>
-
-                <div class="status">
-                    <div class="status-item">
-                        <h3>Status</h3>
-                        <p id="statusValue">🔴 Offline</p>
-                    </div>
-                    <div class="status-item">
-                        <h3>Last Updated</h3>
-                        <p id="lastUpdate">Never</p>
-                    </div>
-                    <div class="status-item">
-                        <h3>Connection</h3>
-                        <p id="connectionValue">Waiting...</p>
-                    </div>
-                    <div class="status-item">
-                        <h3>Uptime</h3>
-                        <p id="uptimeValue">00:00:00</p>
-                    </div>
-                </div>
-
-                <button class="btn-primary" onclick="refreshView()" style="width: 100%; margin-top: 20px;">
-                    🔄 Refresh View
-                </button>
-            </div>
-        </div>
-
-        <!-- Setup Tab -->
-        <div id="setup" class="tab-content">
-            <div>
-                <h2 style="margin-bottom: 20px; color: #333;">Configuration</h2>
-
-                <div class="success-message" id="successMessage">
-                    ✓ Settings saved successfully!
-                </div>
-
-                <div class="info-box">
-                    <h3>💡 Setup Information</h3>
-                    <p>Configure your baby monitor settings below. These settings will be stored locally and used to display your live feed and monitoring status.</p>
-                </div>
-
-                <form class="setup-form" onsubmit="saveSettings(event)">
-                    <div class="form-group">
-                        <label for="monitorName">Monitor Name</label>
-                        <input type="text" id="monitorName" placeholder="e.g., Nursery Camera" value="">
-                    </div>
-
-                    <div class="form-group">
-                        <label for="videoSource">Video Source URL</label>
-                        <input type="url" id="videoSource" placeholder="e.g., http://192.168.1.100:8080/video" value="">
-                    </div>
-
-                    <div class="form-group">
-                        <label for="refreshInterval">Refresh Interval (seconds)</label>
-                        <input type="number" id="refreshInterval" min="1" max="300" value="5" placeholder="5">
-                    </div>
-
-                    <div class="form-group">
-                        <label for="enableAudio">Features</label>
-                        <div style="display: flex; gap: 15px; margin-top: 10px;">
-                            <label style="display: flex; align-items: center; font-weight: normal;">
-                                <input type="checkbox" id="enableAudio" style="width: auto; margin-right: 8px;">
-                                Enable Audio
-                            </label>
-                            <label style="display: flex; align-items: center; font-weight: normal;">
-                                <input type="checkbox" id="enableNotifications" style="width: auto; margin-right: 8px;">
-                                Enable Notifications
-                            </label>
-                        </div>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="monitoringMode">Monitoring Mode</label>
-                        <select id="monitoringMode">
-                            <option value="continuous">Continuous Monitoring</option>
-                            <option value="schedule">Scheduled</option>
-                            <option value="motion">Motion Detection</option>
-                        </select>
-                    </div>
-
-                    <div class="button-group">
-                        <button type="submit" class="btn-primary">💾 Save Settings</button>
-                        <button type="button" class="btn-secondary" onclick="resetSettings()">↺ Reset</button>
-                    </div>
-                </form>
-
-                <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0;">
-                    <h3 style="margin-bottom: 15px; color: #333; font-size: 14px;">Advanced Options</h3>
-                    <button class="btn-secondary" onclick="clearAllData()" style="width: 100%;">
-                        🗑️ Clear All Data
-                    </button>
-                </div>
-            </div>
-        </div>
+  <!-- Tab Content -->
+  <div class="tabs-container">
+    <!-- View Tab -->
+    <div class="tab-content active" id="view-tab">
+      <div class="view-wrap">
+        <video id="player" playsinline webkit-playsinline muted autoplay controls>
+          <source src="/hls/stream.m3u8" type="application/vnd.apple.mpegurl">
+          Your browser does not support HLS playback natively. 
+        </video>
+        <div class="status" id="status">Connecting…</div>
+      </div>
     </div>
 
-    <script>
-        // Tab switching functionality
-        function switchTab(tabName) {
-            // Hide all tab contents
-            const contents = document.querySelectorAll('.tab-content');
-            contents.forEach(content => {
-                content.classList.remove('active');
-            });
+    <!-- Setup Tab -->
+    <div class="tab-content" id="setup-tab">
+      <div class="setup-container">
+        <div class="setup-section">
+          <h2>WiFi Configuration</h2>
+          
+          <div id="configStatus" class="status-message"></div>
 
-            // Remove active class from all buttons
-            const buttons = document.querySelectorAll('.tab-button');
-            buttons.forEach(button => {
-                button.classList.remove('active');
-            });
+          <div class="form-group">
+            <label for="ssid">Network Name (SSID)</label>
+            <input
+              type="text"
+              id="ssid"
+              placeholder="Enter WiFi network name"
+              autocomplete="off"
+            />
+          </div>
 
-            // Show selected tab content
-            document.getElementById(tabName).classList.add('active');
+          <div class="form-group">
+            <label for="password">Password</label>
+            <input
+              type="password"
+              id="password"
+              placeholder="Enter WiFi password (leave empty for open networks)"
+              autocomplete="off"
+            />
+          </div>
 
-            // Add active class to clicked button
-            event.target.classList.add('active');
+          <div class="button-group">
+            <button class="btn-primary" id="configureBtn">
+              Connect WiFi
+            </button>
+            <button class="btn-secondary" id="clearBtn">
+              Clear
+            </button>
+          </div>
 
-            // Load settings if switching to setup tab
-            if (tabName === 'setup') {
-                loadSettings();
-            }
-        }
+          <div class="info-box">
+            <strong>ℹ️ How it works:</strong><br>
+            Enter your WiFi network name and password above.  The device will attempt to connect to the specified network.  Make sure the network is available and the credentials are correct.
+          </div>
+        </div>
 
-        // Settings management
-        function saveSettings(event) {
-            event.preventDefault();
+        <div class="setup-section">
+          <h2>Device Information</h2>
+          <div class="info-box">
+            <strong>🍓 Raspberry Pi Camera Monitor</strong><br>
+            Local streaming via HLS<br>
+            <br>
+            <strong>Access:</strong> Connect via ZeroTier for remote access<br>
+            <strong>Port:</strong> 8000<br>
+            <strong>Streaming:</strong> /hls/stream.m3u8
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
-            const settings = {
-                monitorName: document.getElementById('monitorName').value || 'Baby Monitor',
-                videoSource: document.getElementById('videoSource').value,
-                refreshInterval: parseInt(document.getElementById('refreshInterval').value) || 5,
-                enableAudio: document.getElementById('enableAudio').checked,
-                enableNotifications: document.getElementById('enableNotifications').checked,
-                monitoringMode: document.getElementById('monitoringMode').value
-            };
+  <script>
+    // Tab switching logic
+    document.querySelectorAll('.tab-button').forEach(button => {
+      button.addEventListener('click', () => {
+        const tabName = button.dataset.tab;
 
-            localStorage.setItem('babyMonitorSettings', JSON.stringify(settings));
-
-            // Show success message
-            const successMessage = document.getElementById('successMessage');
-            successMessage.classList.add('show');
-            setTimeout(() => {
-                successMessage.classList.remove('show');
-            }, 3000);
-
-            console.log('Settings saved:', settings);
-        }
-
-        function loadSettings() {
-            const settings = JSON.parse(localStorage.getItem('babyMonitorSettings')) || {};
-
-            document.getElementById('monitorName').value = settings.monitorName || '';
-            document.getElementById('videoSource').value = settings.videoSource || '';
-            document.getElementById('refreshInterval').value = settings.refreshInterval || 5;
-            document.getElementById('enableAudio').checked = settings.enableAudio || false;
-            document.getElementById('enableNotifications').checked = settings.enableNotifications || false;
-            document.getElementById('monitoringMode').value = settings.monitoringMode || 'continuous';
-        }
-
-        function resetSettings() {
-            document.getElementById('monitorName').value = '';
-            document.getElementById('videoSource').value = '';
-            document.getElementById('refreshInterval').value = 5;
-            document.getElementById('enableAudio').checked = false;
-            document.getElementById('enableNotifications').checked = false;
-            document.getElementById('monitoringMode').value = 'continuous';
-        }
-
-        function clearAllData() {
-            if (confirm('Are you sure you want to clear all saved data? This cannot be undone.')) {
-                localStorage.removeItem('babyMonitorSettings');
-                resetSettings();
-                alert('All data has been cleared.');
-            }
-        }
-
-        function refreshView() {
-            const settings = JSON.parse(localStorage.getItem('babyMonitorSettings')) || {};
-            const videoSource = settings.videoSource;
-
-            if (videoSource) {
-                const videoFeed = document.getElementById('videoFeed');
-                const videoPlaceholder = document.getElementById('videoPlaceholder');
-
-                videoFeed.src = videoSource;
-                videoFeed.style.display = 'block';
-                videoPlaceholder.style.display = 'none';
-
-                // Update status
-                document.getElementById('statusValue').textContent = '🟢 Online';
-                document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
-                document.getElementById('connectionValue').textContent = '✓ Connected';
-            } else {
-                alert('Please configure the video source in the Setup tab first.');
-            }
-        }
-
-        // Initialize on page load
-        window.addEventListener('DOMContentLoaded', function() {
-            loadSettings();
+        // Hide all tabs
+        document.querySelectorAll('.tab-content').forEach(tab => {
+          tab.classList. remove('active');
         });
-    </script>
+
+        // Deactivate all buttons
+        document.querySelectorAll('.tab-button').forEach(btn => {
+          btn.classList. remove('active');
+        });
+
+        // Show selected tab
+        document.getElementById(`${tabName}-tab`).classList.add('active');
+        button.classList.add('active');
+      });
+    });
+
+    // WiFi Configuration
+    const configureBtn = document.getElementById('configureBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const ssidInput = document.getElementById('ssid');
+    const passwordInput = document.getElementById('password');
+    const configStatus = document.getElementById('configStatus');
+
+    function showStatus(message, type) {
+      configStatus.textContent = message;
+      configStatus.className = `status-message show ${type}`;
+      if (type !== 'loading') {
+        setTimeout(() => {
+          configStatus. classList.remove('show');
+        }, 5000);
+      }
+    }
+
+    configureBtn.addEventListener('click', async () => {
+      const ssid = ssidInput.value.trim();
+      const password = passwordInput.value;
+
+      if (!ssid) {
+        showStatus('❌ Please enter a network name', 'error');
+        return;
+      }
+
+      configureBtn.disabled = true;
+      showStatus('⏳ Configuring WiFi connection...', 'loading');
+
+      try {
+        const response = await fetch('/api/configure-wifi', {
+          method:  'POST',
+          headers:  {
+            'Content-Type':  'application/json',
+          },
+          body: JSON.stringify({
+            ssid: ssid,
+            password: password,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          showStatus(`✅ WiFi configuration initiated for "${ssid}"`, 'success');
+          ssidInput.value = '';
+          passwordInput.value = '';
+        } else {
+          showStatus(`❌ Configuration failed: ${data.message}`, 'error');
+        }
+      } catch (error) {
+        showStatus(`❌ Error:  ${error.message}`, 'error');
+      } finally {
+        configureBtn.disabled = false;
+      }
+    });
+
+    clearBtn.addEventListener('click', () => {
+      ssidInput.value = '';
+      passwordInput.value = '';
+      configStatus.classList.remove('show');
+    });
+
+    // Allow Enter key to submit
+    passwordInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        configureBtn.click();
+      }
+    });
+
+    // Video streaming logic (from original)
+    (function () {
+      const player = document. getElementById('player');
+      const statusEl = document.getElementById('status');
+
+      let trying = 0;
+
+      player.addEventListener('playing', () => {
+        statusEl.textContent = '📹 Live';
+      });
+
+      player.addEventListener('waiting', () => {
+        statusEl.textContent = '⏳ Buffering…';
+      });
+
+      player.addEventListener('stalled', () => {
+        statusEl.textContent = '🔄 Reconnecting…';
+      });
+
+      player.addEventListener('error', () => {
+        statusEl.textContent = '⚠️ Playback error';
+        retryLoad();
+      });
+
+      async function tryAutoplay() {
+        try {
+          await player.play();
+          statusEl.textContent = '📹 Live';
+        } catch (e) {
+          statusEl.textContent = '▶️ Tap to play';
+        }
+      }
+
+      function retryLoad() {
+        trying++;
+        const delay = Math.min(30000, 500 * Math.pow(2, trying));
+        setTimeout(() => {
+          try {
+            const src = '/hls/stream.m3u8? cb=' + Date.now();
+            const source = player.querySelector('source');
+            if (source) {
+              source. src = src;
+            } else {
+              player.src = src;
+            }
+            player.load();
+            player.play().catch(() => {});
+          } catch (e) {
+            retryLoad();
+          }
+        }, delay);
+      }
+
+      tryAutoplay();
+
+      setTimeout(() => {
+        if (player.paused || player.readyState < 3) {
+          statusEl.textContent = '▶️ Tap to play';
+        }
+      }, 2000);
+
+      let lastTap = 0;
+      player.addEventListener('touchend', (ev) => {
+        const now = Date.now();
+        if (now - lastTap < 300) {
+          if (document.fullscreenElement) {
+            document.exitFullscreen().catch(() => {});
+          } else {
+            player.requestFullscreen().catch(() => {});
+          }
+        }
+        lastTap = now;
+      });
+    })();
+  </script>
 </body>
 </html>
