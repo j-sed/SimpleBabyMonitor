@@ -38,7 +38,7 @@ logging.basicConfig(level=logging.INFO,
 last_frame_time = 0.0
 
 # WiFi configuration using nmcli
-WIFI_LIST_COMMAND = 'sudo nmcli device wifi list'
+WIFI_LIST_COMMAND = 'nmcli -f ssid,mode,chan,rate,signal,bars,security -t dev wifi'
 WIFI_CONFIG_COMMAND = 'sudo nmcli device wifi connect'
 
 
@@ -63,8 +63,9 @@ def get_wifi_networks():
         # Skip header line
         if len(lines) > 1:
             for line in lines[1:]: 
-                parts = line.split()
+                parts = line.split(":")
                 if len(parts) >= 5:
+
                     try:
                         ssid = parts[0]
                         signal = int(parts[4])
