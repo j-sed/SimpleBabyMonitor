@@ -8,10 +8,14 @@
   <title>SimpleBabyMonitor</title>
   <meta name="description" content="Simple local baby monitor with HLS streaming and WiFi configuration" />
   <style>
+    * {
+      box-sizing: border-box;
+    }
+
     html, body {
       height: 100%;
       margin:  0;
-      background:  #000;
+      background: #000;
       -webkit-touch-callout: none;
       -webkit-user-select: none;
       -ms-user-select: none;
@@ -44,10 +48,10 @@
       border-bottom: 3px solid transparent;
     }
 
-    .tab-button.active {
+    .tab-button. active {
       color: #fff;
       border-bottom-color: #0ea5e9;
-      background:  #222;
+      background: #222;
     }
 
     .tab-button:hover {
@@ -61,7 +65,7 @@
       left: 0;
       right: 0;
       bottom: 0;
-      overflow: hidden;
+      overflow:  hidden;
     }
 
     .tab-content {
@@ -70,7 +74,7 @@
       height:  100%;
       opacity: 0;
       pointer-events: none;
-      transition: opacity 0.3s ease;
+      transition:  opacity 0.3s ease;
       overflow: auto;
     }
 
@@ -83,7 +87,7 @@
     .view-wrap {
       position: relative;
       width: 100%;
-      height: 100%;
+      height:  100%;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -93,7 +97,7 @@
     video {
       width: 100%;
       height: 100%;
-      object-fit:  contain;
+      object-fit: contain;
       background: #000;
     }
 
@@ -111,7 +115,7 @@
     }
 
     /* Setup Tab Styles */
-    .setup-container {
+    . setup-container {
       max-width: 600px;
       margin: 20px auto;
       padding: 20px;
@@ -144,9 +148,8 @@
       font-weight: 500;
     }
 
-    .form-group input,
-    .form-group select {
-      width: 100%;
+    .form-group input {
+      width:  100%;
       padding: 12px;
       background: #2a2a2a;
       border: 1px solid #444;
@@ -156,8 +159,7 @@
       transition: border-color 0.3s ease;
     }
 
-    .form-group input:focus,
-    .form-group select:focus {
+    .form-group input:focus {
       outline: none;
       border-color: #0ea5e9;
       background: #333;
@@ -165,54 +167,6 @@
 
     .form-group input:: placeholder {
       color: #666;
-    }
-
-    .network-list {
-      background: #2a2a2a;
-      border: 1px solid #444;
-      border-radius: 6px;
-      max-height: 300px;
-      overflow-y: auto;
-      margin-bottom: 15px;
-    }
-
-    .network-item {
-      padding: 12px;
-      border-bottom: 1px solid #444;
-      cursor: pointer;
-      transition: background 0.2s ease;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .network-item:last-child {
-      border-bottom: none;
-    }
-
-    .network-item:hover {
-      background: #333;
-    }
-
-    .network-info {
-      flex: 1;
-    }
-
-    .network-name {
-      color: #fff;
-      font-weight: 500;
-      margin-bottom: 4px;
-    }
-
-    .network-details {
-      color: #999;
-      font-size: 12px;
-    }
-
-    .network-signal {
-      color: #0ea5e9;
-      margin-left: 10px;
-      font-weight: 600;
     }
 
     .button-group {
@@ -226,7 +180,7 @@
       padding: 12px 20px;
       border: none;
       border-radius: 6px;
-      font-size: 16px;
+      font-size:  16px;
       font-weight: 600;
       cursor: pointer;
       transition: all 0.3s ease;
@@ -234,10 +188,10 @@
 
     . btn-primary {
       background: #0ea5e9;
-      color:  #000;
+      color: #000;
     }
 
-    .btn-primary:hover:not(:disabled) {
+    .btn-primary:hover: not(:disabled) {
       background: #0284c7;
       transform: translateY(-2px);
       box-shadow: 0 4px 12px rgba(14, 165, 233, 0.4);
@@ -256,17 +210,6 @@
 
     .btn-secondary:hover:not(:disabled) {
       background: #555;
-    }
-
-    .btn-refresh {
-      background: #666;
-      color: #fff;
-      padding: 8px 12px;
-      font-size: 12px;
-    }
-
-    .btn-refresh:hover {
-      background: #777;
     }
 
     .status-message {
@@ -299,7 +242,7 @@
       border: 1px solid #0ea5e9;
     }
 
-    .info-box {
+    . info-box {
       background: #2a2a2a;
       border-left: 4px solid #0ea5e9;
       padding: 12px;
@@ -343,7 +286,7 @@
     <div class="tab-content active" id="view-tab">
       <div class="view-wrap">
         <video id="player" playsinline webkit-playsinline muted autoplay controls>
-          <source src="/hls/stream.m3u8" type="application/vnd. apple.mpegurl">
+          <source src="/hls/stream.m3u8" type="application/vnd.apple.mpegurl">
           Your browser does not support HLS playback natively. 
         </video>
         <div class="status" id="status">Connecting…</div>
@@ -355,27 +298,15 @@
       <div class="setup-container">
         <div class="setup-section">
           <h2>WiFi Configuration</h2>
-
+          
           <div id="configStatus" class="status-message"></div>
-
-          <div class="form-group">
-            <label for="wifiNetworks">
-              Available Networks
-              <button type="button" class="btn-refresh" id="refreshNetworksBtn">🔄 Refresh</button>
-            </label>
-            <div class="network-list" id="networkList">
-              <div class="network-item" style="justify-content: center; color: #999;">
-                Loading networks...
-              </div>
-            </div>
-          </div>
 
           <div class="form-group">
             <label for="ssid">Network Name (SSID)</label>
             <input
               type="text"
               id="ssid"
-              placeholder="Or enter manually"
+              placeholder="Enter WiFi network name"
               autocomplete="off"
             />
           </div>
@@ -385,7 +316,7 @@
             <input
               type="password"
               id="password"
-              placeholder="Leave empty for open networks"
+              placeholder="Enter WiFi password (leave empty for open networks)"
               autocomplete="off"
             />
           </div>
@@ -401,7 +332,7 @@
 
           <div class="info-box">
             <strong>ℹ️ How it works:</strong><br>
-            Select a network from the list or enter manually. The device will attempt to connect using nmcli.
+            Enter your WiFi network name and password above.  The device will attempt to connect to the specified network.  Make sure the network is available and the credentials are correct.
           </div>
         </div>
 
@@ -426,31 +357,27 @@
       button.addEventListener('click', () => {
         const tabName = button.dataset.tab;
 
+        // Hide all tabs
         document.querySelectorAll('.tab-content').forEach(tab => {
           tab.classList. remove('active');
         });
 
-        document.querySelectorAll('. tab-button').forEach(btn => {
+        // Deactivate all buttons
+        document.querySelectorAll('.tab-button').forEach(btn => {
           btn.classList. remove('active');
         });
 
+        // Show selected tab
         document.getElementById(`${tabName}-tab`).classList.add('active');
         button.classList.add('active');
-
-        // Load networks when setup tab is opened
-        if (tabName === 'setup') {
-          loadNetworks();
-        }
       });
     });
 
     // WiFi Configuration
     const configureBtn = document.getElementById('configureBtn');
     const clearBtn = document.getElementById('clearBtn');
-    const refreshNetworksBtn = document.getElementById('refreshNetworksBtn');
     const ssidInput = document.getElementById('ssid');
     const passwordInput = document.getElementById('password');
-    const networkList = document.getElementById('networkList');
     const configStatus = document.getElementById('configStatus');
 
     function showStatus(message, type) {
@@ -462,42 +389,6 @@
         }, 5000);
       }
     }
-
-    function loadNetworks() {
-      showStatus('⏳ Loading networks...', 'loading');
-      fetch('/api/wifi-networks')
-        .then(r => r.json())
-        .then(data => {
-          if (data.status === 'success' && data.networks.length > 0) {
-            networkList. innerHTML = data.networks.map(net =>
-              `<div class="network-item" onclick="selectNetwork('${net.ssid}')">
-                <div class="network-info">
-                  <div class="network-name">${net.ssid}</div>
-                  <div class="network-details">${net.security}</div>
-                </div>
-                <div class="network-signal">${net.signal}%</div>
-              </div>`
-            ).join('');
-            configStatus.classList.remove('show');
-          } else {
-            networkList.innerHTML = '<div class="network-item" style="justify-content: center; color: #999;">No networks found</div>';
-          }
-        })
-        .catch(error => {
-          showStatus(`Error loading networks: ${error.message}`, 'error');
-          networkList.innerHTML = '<div class="network-item" style="justify-content: center; color: #999;">Failed to load</div>';
-        });
-    }
-
-    function selectNetwork(ssid) {
-      ssidInput.value = ssid;
-      passwordInput.focus();
-    }
-
-    refreshNetworksBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      loadNetworks();
-    });
 
     configureBtn.addEventListener('click', async () => {
       const ssid = ssidInput.value.trim();
@@ -513,12 +404,12 @@
 
       try {
         const response = await fetch('/api/configure-wifi', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
+          method:  'POST',
+          headers:  {
+            'Content-Type':  'application/json',
           },
           body: JSON.stringify({
-            ssid:  ssid,
+            ssid: ssid,
             password: password,
           }),
         });
@@ -545,6 +436,7 @@
       configStatus.classList.remove('show');
     });
 
+    // Allow Enter key to submit
     passwordInput.addEventListener('keypress', (e) => {
       if (e.key === 'Enter') {
         configureBtn.click();
@@ -553,7 +445,7 @@
 
     // Video streaming logic (from original)
     (function () {
-      const player = document.getElementById('player');
+      const player = document. getElementById('player');
       const statusEl = document.getElementById('status');
 
       let trying = 0;
@@ -625,9 +517,6 @@
         lastTap = now;
       });
     })();
-
-    // Load networks on page load if setup tab becomes active
-    loadNetworks();
   </script>
 </body>
 </html>

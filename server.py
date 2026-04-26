@@ -2,16 +2,17 @@
 """
 server.py
 
-Produce HLS (stream.m3u8 + fragments) with camera video and embedded audio. 
+Produce HLS (stream.m3u8 + fragments) with camera video and embedded audio.
 Audio is captured by ffmpeg (ALSA "default" device) and encoded to low-quality AAC
-so the HLS stream contains both video and audio. 
+so the HLS stream contains both video and audio.
 
-Also provides WiFi configuration endpoints for setting up wireless connections via web UI. 
+Also provides WiFi configuration endpoints for setting up wireless connections via web UI.
 
 Notes:
-- Requires ffmpeg on the system with ALSA support. 
+
+- Requires ffmpeg on the system with ALSA support.
 - This script uses Picamera2 to produce an H264 elementary stream which is piped
-  into ffmpeg (via Picamera2's FfmpegOutput). ffmpeg also opens the ALSA input. 
+  into ffmpeg (via Picamera2's FfmpegOutput). ffmpeg also opens the ALSA input.
 - The HTTP server serves index.html and any generated playlist/segment files so the
   browser can fetch /stream.m3u8 and accompanying fragments.
 """
@@ -31,16 +32,18 @@ from picamera2.encoders import H264Encoder
 from picamera2.outputs import FileOutput, FfmpegOutput
 
 # Configure logging
-logging.basicConfig(level=logging.INFO,
-                   format='%(asctime)s - %(levelname)s - %(message)s')
 
-# unix timestamp of last written frame; updated by StreamingOutput. write()
+logging.basicConfig(level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s')
+
+# unix timestamp of last written frame; updated by StreamingOutput.write()
+
 last_frame_time = 0.0
 
 # WiFi configuration using nmcli
-WIFI_LIST_COMMAND = 'nmcli -f ssid,mode,chan,rate,signal,bars,security -t dev wifi'
-WIFI_CONFIG_COMMAND = 'sudo nmcli device wifi connect'
 
+WIFI_LIST_COMMAND = 'nmcli -f ssid,mode,chan,rate,signal,bars,security -t dev wifi'
+WIFI_CONFIG_COMMAND = 'nmcli device wifi connect'
 
 def get_wifi_networks():
     """Get list of available WiFi networks using nmcli"""
@@ -62,10 +65,9 @@ def get_wifi_networks():
 
         # Skip header line
         if len(lines) > 1:
-            for line in lines[1:]: 
+            for line in lines[1:]:
                 parts = line.split(":")
                 if len(parts) >= 5:
-
                     try:
                         ssid = parts[0]
                         signal = int(parts[4])
@@ -99,7 +101,7 @@ class StreamingOutput(io.BufferedIOBase):
                 last_frame_time = time.time()
             except Exception:
                 pass
-            self. condition.notify_all()
+            self.condition.notify_all()
 
 
 class StreamingHandler(server.BaseHTTPRequestHandler):
@@ -114,7 +116,7 @@ class StreamingHandler(server.BaseHTTPRequestHandler):
         logging.info(format % args)
 
     def do_GET(self):
-        # Convenience:  path without query
+        # Convenience: path without query
         path = self.path.split('?', 1)[0]
 
         if path == '/':
@@ -123,9 +125,9 @@ class StreamingHandler(server.BaseHTTPRequestHandler):
             self.end_headers()
             return
 
-        if path == '/index.html': 
+        if path == '/index.html':
             try:
-                with open(os.path.join(os. path.dirname(__file__), 'index.html'), 'rb') as f:
+                with open(os.path.join(os.path.dirname(__file__), 'index.html'), 'rb') as f:
                     content = f.read()
                 self.send_response(200)
                 self.send_header('Content-Type', 'text/html')
@@ -147,13 +149,13 @@ class StreamingHandler(server.BaseHTTPRequestHandler):
                     'status': 'success',
                     'networks': networks
                 }).encode('utf-8')
-                self. send_response(200)
+                self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
                 self.send_header('Content-Length', len(content))
                 self._send_cors_headers()
                 self.end_headers()
                 self.wfile.write(content)
-            except Exception as e: 
+            except Exception as e:
                 logging.error(f'Error fetching WiFi networks: {e}')
                 self.send_response(500)
                 self.send_header('Content-Type', 'application/json')
@@ -173,8 +175,8 @@ class StreamingHandler(server.BaseHTTPRequestHandler):
             self.end_headers()
             try:
                 while True:
-                    with output. condition:
-                        output.condition. wait()
+                    with output.condition:
+                        output.condition.wait()
                         frame = output.frame
                     self.wfile.write(b'--FRAME\r\n')
                     self.send_header('Content-Type', 'image/jpeg')
@@ -183,7 +185,7 @@ class StreamingHandler(server.BaseHTTPRequestHandler):
                     self.wfile.write(frame)
                     self.wfile.write(b'\r\n')
             except Exception as e:
-                logging.warning('Removed streaming client %s:  %s', self.client_address, str(e))
+                logging.warning('Removed streaming client %s: %s', self.client_address, str(e))
             return
 
         if path == '/frame-info':
@@ -197,7 +199,7 @@ class StreamingHandler(server.BaseHTTPRequestHandler):
                 self._send_cors_headers()
                 self.end_headers()
                 self.wfile.write(content)
-            except Exception as e: 
+            except Exception as e:
                 logging.warning(f'Failed to serve frame-info: {e}')
             return
 
@@ -205,7 +207,7 @@ class StreamingHandler(server.BaseHTTPRequestHandler):
         try:
             rel_path = path.lstrip('/')
             # Prevent directory traversal attacks
-            if '. .' in rel_path or rel_path.startswith('/'):
+            if '..' in rel_path or rel_path.startswith('/'):
                 raise FileNotFoundError()
 
             fs_path = os.path.join(os.path.dirname(__file__), rel_path)
@@ -246,7 +248,7 @@ class StreamingHandler(server.BaseHTTPRequestHandler):
                 # Stream the file in binary mode in chunks
                 with open(fs_path, 'rb') as f:
                     try:
-                        while True: 
+                        while True:
                             chunk = f.read(64 * 1024)
                             if not chunk:
                                 break
@@ -260,26 +262,26 @@ class StreamingHandler(server.BaseHTTPRequestHandler):
         except Exception as e:
             logging.warning(f'Error while serving static file {path}: {e}')
 
-        # If we get here, nothing matched:  404
+        # If we get here, nothing matched: 404
         self.send_error(404)
         self.end_headers()
 
     def do_POST(self):
         """Handle POST requests for configuration endpoints"""
-        path = self.path.split('? ', 1)[0]
+        path = self.path.split('?', 1)[0]
 
         if path == '/api/configure-wifi':
-            try: 
-                content_length = int(self.headers. get('Content-Length', 0))
+            try:
+                content_length = int(self.headers.get('Content-Length', 0))
                 body = self.rfile.read(content_length)
                 data = json.loads(body.decode('utf-8'))
 
                 ssid = data.get('ssid', '')
                 password = data.get('password', '')
 
-                if not ssid: 
+                if not ssid:
                     self.send_response(400)
-                    self. send_header('Content-Type', 'application/json')
+                    self.send_header('Content-Type', 'application/json')
                     self.end_headers()
                     response = json.dumps({"status": "error", "message": "SSID is required"})
                     self.wfile.write(response.encode('utf-8'))
@@ -287,10 +289,10 @@ class StreamingHandler(server.BaseHTTPRequestHandler):
 
                 # Build nmcli command
                 logging.info(f"Configuring WiFi: {ssid}")
-                
+
                 if password:
                     cmd = f'{WIFI_CONFIG_COMMAND} "{ssid}" password "{password}"'
-                else: 
+                else:
                     cmd = f'{WIFI_CONFIG_COMMAND} "{ssid}"'
 
                 result = subprocess.run(
@@ -301,8 +303,8 @@ class StreamingHandler(server.BaseHTTPRequestHandler):
                     timeout=30
                 )
 
-                if result. returncode == 0:
-                    self. send_response(200)
+                if result.returncode == 0:
+                    self.send_response(200)
                     self.send_header('Content-Type', 'application/json')
                     self.end_headers()
                     response = json.dumps({
@@ -312,7 +314,7 @@ class StreamingHandler(server.BaseHTTPRequestHandler):
                     })
                     self.wfile.write(response.encode('utf-8'))
                     logging.info(f"WiFi configuration successful for {ssid}")
-                else: 
+                else:
                     self.send_response(500)
                     self.send_header('Content-Type', 'application/json')
                     self.end_headers()
@@ -322,26 +324,26 @@ class StreamingHandler(server.BaseHTTPRequestHandler):
                         "error": result.stderr
                     })
                     self.wfile.write(response.encode('utf-8'))
-                    logging.error(f"WiFi configuration failed:  {result.stderr}")
+                    logging.error(f"WiFi configuration failed: {result.stderr}")
 
             except json.JSONDecodeError:
                 self.send_response(400)
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
-                response = json.dumps({"status":  "error", "message": "Invalid JSON"})
+                response = json.dumps({"status": "error", "message": "Invalid JSON"})
                 self.wfile.write(response.encode('utf-8'))
             except subprocess.TimeoutExpired:
                 self.send_response(500)
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
                 response = json.dumps({"status": "error", "message": "Configuration timeout"})
-                self.wfile. write(response.encode('utf-8'))
+                self.wfile.write(response.encode('utf-8'))
             except Exception as e:
                 logging.error(f"Error handling WiFi configuration: {e}")
                 self.send_response(500)
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
-                response = json. dumps({"status": "error", "message": str(e)})
+                response = json.dumps({"status": "error", "message": str(e)})
                 self.wfile.write(response.encode('utf-8'))
             return
 
@@ -365,7 +367,8 @@ def run_http_server():
 def main():
     # Initialize camera
     picam2 = Picamera2()
-    picam2.configure(picam2.create_video_configuration(main={"size": (640, 480)}))
+    picam2.configure(picam2.create_video_configuration(main={"size": (320, 240)}))
+    picam2.set_controls({"Saturation": 0})
     global output
     enc = H264Encoder(repeat=True)
 
@@ -376,13 +379,28 @@ def main():
     # - copy video stream (camera already provides H264), let ffmpeg mux video+audio into HLS
     # - produce HLS (stream.m3u8) in the script directory
     ffmpeg_args = (
-        "-f hls -hls_time 0.5 -hls_list_size 50 -hls_flags delete_segments -hls_allow_cache 0 -nostdin hls/stream.m3u8"
+        "-f hls"
+        " -hls_time 0.2"
+        " -hls_list_size 10"
+        " -hls_flags delete_segments"
+        " -hls_allow_cache 0"
+        " -ar 48000"
+        " -b:a 48k"
+        " -nostdin"
+        " -filter:a volume=2.5"
+        " hls/stream.m3u8"
     )
 
     # Use FfmpegOutput which starts ffmpeg and accepts H264 data on stdin from Picamera2
-    output = FfmpegOutput(ffmpeg_args, audio=True)
+    output = FfmpegOutput(ffmpeg_args, audio=True, audio_samplerate="16000")
     picam2.start_recording(enc, output)
-    logging.info("Started Picamera2 recording and ffmpeg HLS packaging (video + audio)")
+
+    # FIX: Wait for the camera sensor to stabilize before serving any frames.
+    # Without this delay, the first HLS segments contain black frames because
+    # the sensor hasn't finished auto-exposure / white-balance convergence yet.
+    logging.info("Camera warming up, waiting for sensor to stabilize...")
+    time.sleep(3)
+    logging.info("Camera ready. Started Picamera2 recording and ffmpeg HLS packaging (video + audio)")
 
     try:
         run_http_server()
@@ -390,19 +408,20 @@ def main():
         logging.info("Shutting down recording and HTTP server...")
         try:
             picam2.stop_recording()
-        except Exception: 
+        except Exception:
             pass
 
 
 if __name__ == '__main__':
-    try: 
-        os.remove("/home/jsed/PiCameraTutorials/*.m3u8")
-        os.remove("/home/jsed/PiCameraTutorials/*.ts" )
+    try:
+        subprocess.run('rm ~/PiCameraTutorials/hls/stream*', shell=True)
     except:
         pass
-    with open(os.path.join("/home/jsed/PiCameraTutorials","stream.m3u8"), "w") as fp:
-        pass
+    # FIX: Removed the empty stream.m3u8 pre-creation that was here before.
+    # Creating an empty playlist caused connecting clients to receive a broken
+    # m3u8 during the camera warm-up period, putting the HLS player into a
+    # bad state. ffmpeg will create the real m3u8 once it has valid frames.
     try:
         main()
-    except KeyboardInterrupt: 
-        logging.info("Shutting down server...")
+    except KeyboardInterrupt:
+        logging.info("Shutting down server…")
