@@ -1,427 +1,366 @@
 #!/home/jsed/PiCameraTutorials/venv/bin/python3
 """
-server.py
+WebRTC baby monitor server.
 
-Produce HLS (stream.m3u8 + fragments) with camera video and embedded audio.
-Audio is captured by ffmpeg (ALSA "default" device) and encoded to low-quality AAC
-so the HLS stream contains both video and audio.
+Uses aiortc for WebRTC media + aiohttp for HTTP/signaling.
+Signaling: HTTP POST /offer, non-trickle ICE (answer returned after gathering).
 
-Also provides WiFi configuration endpoints for setting up wireless connections via web UI.
-
-Notes:
-
-- Requires ffmpeg on the system with ALSA support.
-- This script uses Picamera2 to produce an H264 elementary stream which is piped
-  into ffmpeg (via Picamera2's FfmpegOutput). ffmpeg also opens the ALSA input.
-- The HTTP server serves index.html and any generated playlist/segment files so the
-  browser can fetch /stream.m3u8 and accompanying fragments.
+Endpoints:
+  GET  /                    → 301 /index.html
+  GET  /index.html          → web UI
+  POST /offer               → WebRTC SDP offer/answer signaling
+  GET  /api/wifi-networks   → nmcli WiFi scan (JSON)
+  POST /api/configure-wifi  → nmcli WiFi connect (JSON)
+  POST /api/reboot          → sudo reboot
 """
 
-import io
-import json
+import asyncio
+import fractions
 import logging
 import os
-import socket
-import socketserver
+import queue as _queue
 import subprocess
-from http import server
-from threading import Condition
+import threading
 import time
+from typing import Set
+
+import av
+import numpy as np
+import pyaudio
+from aiohttp import web
+from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack, AudioStreamTrack
 from picamera2 import Picamera2
-from picamera2.encoders import H264Encoder
-from picamera2.outputs import FileOutput, FfmpegOutput
 
-# Configure logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-logging.basicConfig(level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s')
+# ── Constants ─────────────────────────────────────────────────────────────────
 
-# unix timestamp of last written frame; updated by StreamingOutput.write()
+CAMERA_WIDTH       = 320
+CAMERA_HEIGHT      = 240
+CAMERA_FPS         = 30
+AUDIO_SAMPLE_RATE  = 48000
+AUDIO_CHANNELS     = 1
+AUDIO_CHUNK_SAMPLES = 960   # 20 ms at 48 kHz
 
-last_frame_time = 0.0
+VIDEO_CLOCK_RATE   = 90000
+VIDEO_TIME_BASE    = fractions.Fraction(1, VIDEO_CLOCK_RATE)
+AUDIO_TIME_BASE    = fractions.Fraction(1, AUDIO_SAMPLE_RATE)
 
-# WiFi configuration using nmcli
+STATIC_DIR = os.path.dirname(os.path.abspath(__file__))
 
-WIFI_LIST_COMMAND = 'nmcli -f ssid,mode,chan,rate,signal,bars,security -t dev wifi'
-WIFI_CONFIG_COMMAND = 'nmcli device wifi connect'
+# ── Globals ───────────────────────────────────────────────────────────────────
+
+picam2: Picamera2 | None = None
+pcs: Set[RTCPeerConnection] = set()
+
+# ── WiFi helpers ──────────────────────────────────────────────────────────────
+
+WIFI_LIST_CMD    = "nmcli -f ssid,mode,chan,rate,signal,bars,security -t dev wifi"
+WIFI_CONNECT_CMD = "nmcli device wifi connect"
+
 
 def get_wifi_networks():
-    """Get list of available WiFi networks using nmcli"""
     try:
-        result = subprocess.run(
-            WIFI_LIST_COMMAND,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-
+        result = subprocess.run(WIFI_LIST_CMD, shell=True, capture_output=True, text=True, timeout=10)
         if result.returncode != 0:
-            logging.warning(f'Failed to list WiFi networks: {result.stderr}')
             return []
-
         networks = []
-        lines = result.stdout.strip().split('\n')
-
-        # Skip header line
-        if len(lines) > 1:
-            for line in lines[1:]:
-                parts = line.split(":")
-                if len(parts) >= 5:
-                    try:
-                        ssid = parts[0]
-                        signal = int(parts[4])
-                        security = ' '.join(parts[6:]) if len(parts) > 6 else 'Open'
-
-                        networks.append({
-                            'ssid': ssid,
-                            'signal': signal,
-                            'security': security
-                        })
-                    except (ValueError, IndexError):
-                        continue
-
+        for line in result.stdout.strip().split("\n")[1:]:
+            parts = line.split(":")
+            if len(parts) >= 5:
+                try:
+                    networks.append({
+                        "ssid":     parts[0],
+                        "signal":   int(parts[4]),
+                        "security": " ".join(parts[6:]) if len(parts) > 6 else "Open",
+                    })
+                except (ValueError, IndexError):
+                    continue
         return networks
     except Exception as e:
-        logging.error(f'Error getting WiFi networks: {e}')
+        logging.error(f"WiFi list error: {e}")
         return []
 
 
-class StreamingOutput(io.BufferedIOBase):
+# ── Video track ───────────────────────────────────────────────────────────────
+
+class CameraVideoTrack(VideoStreamTrack):
+    """Captures Picamera2 RGB frames; uses wall-clock pts to avoid drift."""
+
     def __init__(self):
-        self.frame = None
-        self.condition = Condition()
+        super().__init__()
+        self._t0: float | None = None
 
-    def write(self, buf):
-        with self.condition:
-            self.frame = buf
-            # update global timestamp so clients can detect stalls
-            try:
-                global last_frame_time
-                last_frame_time = time.time()
-            except Exception:
-                pass
-            self.condition.notify_all()
+    async def recv(self) -> av.VideoFrame:
+        loop = asyncio.get_running_loop()
+        arr  = await loop.run_in_executor(None, picam2.capture_array, "main")
+        now  = time.time()
+        if self._t0 is None:
+            self._t0 = now
+        frame = av.VideoFrame.from_ndarray(arr, format="rgb24")
+        frame.pts       = int((now - self._t0) * VIDEO_CLOCK_RATE)
+        frame.time_base = VIDEO_TIME_BASE
+        return frame
 
 
-class StreamingHandler(server.BaseHTTPRequestHandler):
-    def _send_cors_headers(self):
-        # allow cross-origin so remote devices / apps can fetch playlist and segments
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Headers', 'Range,Content-Type')
-        self.send_header('Access-Control-Expose-Headers', 'Content-Range,Accept-Ranges,Content-Length')
+# ── Audio track ───────────────────────────────────────────────────────────────
 
-    def log_message(self, format, *args):
-        """Override to use logging instead of stderr"""
-        logging.info(format % args)
+class MicrophoneAudioTrack(AudioStreamTrack):
+    """
+    Lazy-start microphone track.  Opens PyAudio only on first recv() call
+    (after ICE is done) so no audio accumulates in the buffer during signaling.
+    A background thread fills a 2-slot queue; oldest frame is dropped when full
+    to keep latency near zero.  Wall-clock pts avoids long-running drift.
+    """
 
-    def do_GET(self):
-        # Convenience: path without query
-        path = self.path.split('?', 1)[0]
+    def __init__(self):
+        super().__init__()
+        self._buf        = _queue.Queue(maxsize=2)
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._t0: float | None = None
 
-        if path == '/':
-            self.send_response(301)
-            self.send_header('Location', '/index.html')
-            self.end_headers()
-            return
+    # ── internal ──
 
-        if path == '/index.html':
-            try:
-                with open(os.path.join(os.path.dirname(__file__), 'index.html'), 'rb') as f:
-                    content = f.read()
-                self.send_response(200)
-                self.send_header('Content-Type', 'text/html')
-                self.send_header('Content-Length', len(content))
-                self._send_cors_headers()
-                self.end_headers()
-                self.wfile.write(content)
-            except Exception as e:
-                logging.error(f"Failed to serve index.html: {e}")
-                self.send_error(500)
-                self.end_headers()
-            return
+    def _start_capture(self):
+        t = threading.Thread(target=self._capture_loop, daemon=True)
+        t.start()
+        self._thread = t
 
-        if path == '/api/wifi-networks':
-            # Return list of available WiFi networks
-            try:
-                networks = get_wifi_networks()
-                content = json.dumps({
-                    'status': 'success',
-                    'networks': networks
-                }).encode('utf-8')
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json')
-                self.send_header('Content-Length', len(content))
-                self._send_cors_headers()
-                self.end_headers()
-                self.wfile.write(content)
-            except Exception as e:
-                logging.error(f'Error fetching WiFi networks: {e}')
-                self.send_response(500)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                response = json.dumps({'status': 'error', 'message': str(e)})
-                self.wfile.write(response.encode('utf-8'))
-            return
-
-        if path == '/stream.mjpg':
-            # Legacy MJPEG endpoint (kept for compatibility)
-            self.send_response(200)
-            self.send_header('Age', 0)
-            self.send_header('Cache-Control', 'no-cache, private')
-            self.send_header('Pragma', 'no-cache')
-            self.send_header('Content-Type', 'multipart/x-mixed-replace; boundary=FRAME')
-            self._send_cors_headers()
-            self.end_headers()
-            try:
-                while True:
-                    with output.condition:
-                        output.condition.wait()
-                        frame = output.frame
-                    self.wfile.write(b'--FRAME\r\n')
-                    self.send_header('Content-Type', 'image/jpeg')
-                    self.send_header('Content-Length', str(len(frame)))
-                    self.end_headers()
-                    self.wfile.write(frame)
-                    self.wfile.write(b'\r\n')
-            except Exception as e:
-                logging.warning('Removed streaming client %s: %s', self.client_address, str(e))
-            return
-
-        if path == '/frame-info':
-            # Return JSON with last frame timestamp so clients can detect stalls
-            try:
-                info = {"lastFrameUnix": last_frame_time}
-                content = json.dumps(info).encode('utf-8')
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json')
-                self.send_header('Content-Length', len(content))
-                self._send_cors_headers()
-                self.end_headers()
-                self.wfile.write(content)
-            except Exception as e:
-                logging.warning(f'Failed to serve frame-info: {e}')
-            return
-
-        # Serve static files (playlist, fragments, index.html, etc.)
+    def _capture_loop(self):
+        # Suppress ALSA/JACK device-probe noise (cosmetic C-level stderr)
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        old_stderr = os.dup(2)
+        os.dup2(devnull, 2)
+        pa = pyaudio.PyAudio()
+        os.dup2(old_stderr, 2)
+        os.close(devnull)
+        os.close(old_stderr)
+        stream = pa.open(
+            format=pyaudio.paInt16,
+            channels=AUDIO_CHANNELS,
+            rate=AUDIO_SAMPLE_RATE,
+            input=True,
+            frames_per_buffer=AUDIO_CHUNK_SAMPLES,
+        )
         try:
-            rel_path = path.lstrip('/')
-            # Prevent directory traversal attacks
-            if '..' in rel_path or rel_path.startswith('/'):
-                raise FileNotFoundError()
-
-            fs_path = os.path.join(os.path.dirname(__file__), rel_path)
-            if os.path.isdir(fs_path):
-                # don't serve directories
-                raise FileNotFoundError()
-
-            if os.path.exists(fs_path) and os.path.isfile(fs_path):
-                # Determine content type
-                ext = os.path.splitext(fs_path)[1].lower()
-                ctype = 'application/octet-stream'
-                if ext == '.m3u8':
-                    ctype = 'application/vnd.apple.mpegurl'
-                elif ext in ('.ts', '.mpegts'):
-                    ctype = 'video/MP2T'
-                elif ext in ('.m4s', '.mp4'):
-                    ctype = 'video/mp4'
-                elif ext in ('.aac',):
-                    ctype = 'audio/aac'
-                elif ext in ('.wav',):
-                    ctype = 'audio/wav'
-                elif ext in ('.jpg', '.jpeg'):
-                    ctype = 'image/jpeg'
-                elif ext == '.json':
-                    ctype = 'application/json'
-                elif ext == '.css':
-                    ctype = 'text/css'
-                elif ext == '.js':
-                    ctype = 'application/javascript'
-                file_size = os.path.getsize(fs_path)
-                self.send_response(200)
-                self.send_header('Content-Type', ctype)
-                # allow byte-range requests for efficient HLS fetching
-                self.send_header('Accept-Ranges', 'bytes')
-                self.send_header('Content-Length', str(file_size))
-                self._send_cors_headers()
-                self.end_headers()
-                # Stream the file in binary mode in chunks
-                with open(fs_path, 'rb') as f:
+            while not self._stop_event.is_set():
+                raw = stream.read(AUDIO_CHUNK_SAMPLES, exception_on_overflow=False)
+                if self._buf.full():
                     try:
-                        while True:
-                            chunk = f.read(64 * 1024)
-                            if not chunk:
-                                break
-                            self.wfile.write(chunk)
-                    except BrokenPipeError:
-                        # client disconnected
+                        self._buf.get_nowait()
+                    except _queue.Empty:
                         pass
-                return
-        except FileNotFoundError:
-            pass
-        except Exception as e:
-            logging.warning(f'Error while serving static file {path}: {e}')
+                try:
+                    self._buf.put_nowait(raw)
+                except _queue.Full:
+                    pass
+        finally:
+            stream.stop_stream()
+            stream.close()
+            pa.terminate()
 
-        # If we get here, nothing matched: 404
-        self.send_error(404)
-        self.end_headers()
+    # ── aiortc interface ──
 
-    def do_POST(self):
-        """Handle POST requests for configuration endpoints"""
-        path = self.path.split('?', 1)[0]
+    async def recv(self) -> av.AudioFrame:
+        if self._thread is None:
+            self._start_capture()
 
-        if path == '/api/configure-wifi':
-            try:
-                content_length = int(self.headers.get('Content-Length', 0))
-                body = self.rfile.read(content_length)
-                data = json.loads(body.decode('utf-8'))
+        loop = asyncio.get_running_loop()
+        raw  = await loop.run_in_executor(None, self._buf.get)
 
-                ssid = data.get('ssid', '')
-                password = data.get('password', '')
+        now = time.time()
+        if self._t0 is None:
+            self._t0 = now
+        pts = int((now - self._t0) * AUDIO_SAMPLE_RATE)
 
-                if not ssid:
-                    self.send_response(400)
-                    self.send_header('Content-Type', 'application/json')
-                    self.end_headers()
-                    response = json.dumps({"status": "error", "message": "SSID is required"})
-                    self.wfile.write(response.encode('utf-8'))
-                    return
+        samples = np.frombuffer(raw, dtype=np.int16).reshape(1, -1)
+        frame = av.AudioFrame.from_ndarray(samples, format="s16", layout="mono")
+        frame.pts         = pts
+        frame.time_base   = AUDIO_TIME_BASE
+        frame.sample_rate = AUDIO_SAMPLE_RATE
+        return frame
 
-                # Build nmcli command
-                logging.info(f"Configuring WiFi: {ssid}")
-
-                if password:
-                    cmd = f'{WIFI_CONFIG_COMMAND} "{ssid}" password "{password}"'
-                else:
-                    cmd = f'{WIFI_CONFIG_COMMAND} "{ssid}"'
-
-                result = subprocess.run(
-                    cmd,
-                    shell=True,
-                    capture_output=True,
-                    text=True,
-                    timeout=30
-                )
-
-                if result.returncode == 0:
-                    self.send_response(200)
-                    self.send_header('Content-Type', 'application/json')
-                    self.end_headers()
-                    response = json.dumps({
-                        "status": "success",
-                        "message": f"WiFi configuration initiated for {ssid}",
-                        "output": result.stdout
-                    })
-                    self.wfile.write(response.encode('utf-8'))
-                    logging.info(f"WiFi configuration successful for {ssid}")
-                else:
-                    self.send_response(500)
-                    self.send_header('Content-Type', 'application/json')
-                    self.end_headers()
-                    response = json.dumps({
-                        "status": "error",
-                        "message": "WiFi configuration failed",
-                        "error": result.stderr
-                    })
-                    self.wfile.write(response.encode('utf-8'))
-                    logging.error(f"WiFi configuration failed: {result.stderr}")
-
-            except json.JSONDecodeError:
-                self.send_response(400)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                response = json.dumps({"status": "error", "message": "Invalid JSON"})
-                self.wfile.write(response.encode('utf-8'))
-            except subprocess.TimeoutExpired:
-                self.send_response(500)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                response = json.dumps({"status": "error", "message": "Configuration timeout"})
-                self.wfile.write(response.encode('utf-8'))
-            except Exception as e:
-                logging.error(f"Error handling WiFi configuration: {e}")
-                self.send_response(500)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                response = json.dumps({"status": "error", "message": str(e)})
-                self.wfile.write(response.encode('utf-8'))
-            return
-
-        # Unknown POST endpoint
-        self.send_error(404)
-        self.end_headers()
+    def stop(self):
+        self._stop_event.set()
 
 
-class StreamingServer(socketserver.ThreadingMixIn, server.HTTPServer):
-    allow_reuse_address = True
-    daemon_threads = True
+# ── HTTP handlers ─────────────────────────────────────────────────────────────
+
+async def handle_index_redirect(request: web.Request) -> web.Response:
+    raise web.HTTPMovedPermanently("/index.html")
 
 
-def run_http_server():
-    address = ('0.0.0.0', 8000)
-    http_server = StreamingServer(address, StreamingHandler)
-    logging.info("HTTP server listening on %s:%d", address[0], address[1])
-    http_server.serve_forever()
+async def handle_index(request: web.Request) -> web.FileResponse:
+    return web.FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
 
-def main():
-    # Initialize camera
-    picam2 = Picamera2()
-    picam2.configure(picam2.create_video_configuration(main={"size": (320, 240)}))
-    picam2.set_controls({"Saturation": 0})
-    global output
-    enc = H264Encoder(repeat=True)
+async def handle_offer(request: web.Request) -> web.Response:
+    """Receive SDP offer, return fully ICE-gathered SDP answer."""
+    try:
+        body = await request.json()
+    except Exception:
+        raise web.HTTPBadRequest(reason="Invalid JSON")
 
-    # Build ffmpeg command fragment for FfmpegOutput:
-    # - read camera H264 from stdin (-f h264 -i -)
-    # - capture ALSA default device as audio (-f alsa -ac 1 -ar 16000 -i default)
-    # - low-quality AAC audio (-b:a 32k), single channel 16k sample-rate to reduce bitrate/latency
-    # - copy video stream (camera already provides H264), let ffmpeg mux video+audio into HLS
-    # - produce HLS (stream.m3u8) in the script directory
-    ffmpeg_args = (
-        "-f hls"
-        " -hls_time 0.2"
-        " -hls_list_size 10"
-        " -hls_flags delete_segments"
-        " -hls_allow_cache 0"
-        " -ar 48000"
-        " -b:a 48k"
-        " -nostdin"
-        " -filter:a volume=2.5"
-        " hls/stream.m3u8"
+    offer = RTCSessionDescription(sdp=body["sdp"], type=body["type"])
+
+    # Default RTCPeerConnection uses Google STUN; race condition fix: register
+    # icegatheringstatechange BEFORE setLocalDescription so we never miss the event.
+    pc = RTCPeerConnection()
+    pcs.add(pc)
+
+    audio_track = MicrophoneAudioTrack()
+    video_track = CameraVideoTrack()
+
+    @pc.on("connectionstatechange")
+    async def on_connection_state():
+        logging.info(f"Connection state → {pc.connectionState}")
+        if pc.connectionState in ("failed", "closed"):
+            await pc.close()
+            pcs.discard(pc)
+            audio_track.stop()
+
+    pc.addTrack(video_track)
+    pc.addTrack(audio_track)
+
+    # Register BEFORE setLocalDescription to avoid missing instant-complete event
+    ice_done = asyncio.Event()
+
+    @pc.on("icegatheringstatechange")
+    def on_ice():
+        if pc.iceGatheringState == "complete":
+            ice_done.set()
+
+    await pc.setRemoteDescription(offer)
+    answer = await pc.createAnswer()
+    await pc.setLocalDescription(answer)
+
+    if pc.iceGatheringState != "complete":
+        try:
+            await asyncio.wait_for(ice_done.wait(), timeout=5.0)
+        except asyncio.TimeoutError:
+            logging.warning("ICE gathering timed out — returning partial candidates")
+
+    return web.json_response(
+        {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type},
+        headers={"Access-Control-Allow-Origin": "*"},
     )
 
-    # Use FfmpegOutput which starts ffmpeg and accepts H264 data on stdin from Picamera2
-    output = FfmpegOutput(ffmpeg_args, audio=True, audio_samplerate="16000")
-    picam2.start_recording(enc, output)
 
-    # FIX: Wait for the camera sensor to stabilize before serving any frames.
-    # Without this delay, the first HLS segments contain black frames because
-    # the sensor hasn't finished auto-exposure / white-balance convergence yet.
-    logging.info("Camera warming up, waiting for sensor to stabilize...")
-    time.sleep(3)
-    logging.info("Camera ready. Started Picamera2 recording and ffmpeg HLS packaging (video + audio)")
+async def handle_offer_options(request: web.Request) -> web.Response:
+    return web.Response(headers={
+        "Access-Control-Allow-Origin":  "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+    })
 
+
+async def handle_wifi_list(request: web.Request) -> web.Response:
+    loop     = asyncio.get_running_loop()
+    networks = await loop.run_in_executor(None, get_wifi_networks)
+    return web.json_response(
+        {"status": "success", "networks": networks},
+        headers={"Access-Control-Allow-Origin": "*"},
+    )
+
+
+async def handle_wifi_configure(request: web.Request) -> web.Response:
     try:
-        run_http_server()
-    finally:
-        logging.info("Shutting down recording and HTTP server...")
-        try:
-            picam2.stop_recording()
-        except Exception:
-            pass
+        data = await request.json()
+    except Exception:
+        raise web.HTTPBadRequest(reason="Invalid JSON")
+
+    ssid     = data.get("ssid", "").strip()
+    password = data.get("password", "")
+
+    if not ssid:
+        return web.json_response({"status": "error", "message": "SSID is required"}, status=400)
+
+    cmd = f'{WIFI_CONNECT_CMD} "{ssid}"'
+    if password:
+        cmd = f'{WIFI_CONNECT_CMD} "{ssid}" password "{password}"'
+
+    logging.info(f"Configuring WiFi: {ssid}")
+    loop = asyncio.get_running_loop()
+    try:
+        result = await loop.run_in_executor(
+            None,
+            lambda: subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30),
+        )
+    except subprocess.TimeoutExpired:
+        return web.json_response({"status": "error", "message": "Configuration timeout"}, status=500)
+
+    if result.returncode == 0:
+        return web.json_response(
+            {"status": "success", "message": f"WiFi configured for {ssid}", "output": result.stdout},
+            headers={"Access-Control-Allow-Origin": "*"},
+        )
+    return web.json_response(
+        {"status": "error", "message": "WiFi configuration failed", "error": result.stderr},
+        status=500,
+        headers={"Access-Control-Allow-Origin": "*"},
+    )
 
 
-if __name__ == '__main__':
+async def handle_reboot(request: web.Request) -> web.Response:
+    loop = asyncio.get_running_loop()
     try:
-        subprocess.run('rm ~/PiCameraTutorials/hls/stream*', shell=True)
-    except:
-        pass
-    # FIX: Removed the empty stream.m3u8 pre-creation that was here before.
-    # Creating an empty playlist caused connecting clients to receive a broken
-    # m3u8 during the camera warm-up period, putting the HLS player into a
-    # bad state. ffmpeg will create the real m3u8 once it has valid frames.
-    try:
-        main()
-    except KeyboardInterrupt:
-        logging.info("Shutting down server…")
+        result = await loop.run_in_executor(
+            None,
+            lambda: subprocess.run("sudo reboot", shell=True, capture_output=True, text=True, timeout=5),
+        )
+        if result.returncode == 0:
+            return web.json_response({"status": "success", "message": "Rebooting…"})
+        return web.json_response(
+            {"status": "error", "message": result.stderr or "Reboot failed"}, status=500
+        )
+    except subprocess.TimeoutExpired:
+        return web.json_response({"status": "success", "message": "Rebooting…"})
+    except Exception as e:
+        return web.json_response({"status": "error", "message": str(e)}, status=500)
+
+
+# ── App lifecycle ─────────────────────────────────────────────────────────────
+
+async def on_startup(app: web.Application):
+    global picam2
+    logging.info("Initialising Picamera2...")
+    picam2 = Picamera2()
+    picam2.configure(
+        picam2.create_video_configuration(
+            main={"size": (CAMERA_WIDTH, CAMERA_HEIGHT), "format": "RGB888"}
+        )
+    )
+    picam2.set_controls({"Saturation": 0})
+    picam2.start()
+    logging.info("Camera warming up (3 s)...")
+    await asyncio.sleep(3)
+    logging.info("Camera ready.")
+
+
+async def on_shutdown(app: web.Application):
+    logging.info("Closing all peer connections...")
+    await asyncio.gather(*[pc.close() for pc in pcs], return_exceptions=True)
+    pcs.clear()
+    if picam2:
+        picam2.stop()
+    logging.info("Shutdown complete.")
+
+
+def build_app() -> web.Application:
+    app = web.Application()
+    app.on_startup.append(on_startup)
+    app.on_shutdown.append(on_shutdown)
+    app.router.add_get("/",                       handle_index_redirect)
+    app.router.add_get("/index.html",             handle_index)
+    app.router.add_post("/offer",                 handle_offer)
+    app.router.add_options("/offer",              handle_offer_options)
+    app.router.add_get("/api/wifi-networks",      handle_wifi_list)
+    app.router.add_post("/api/configure-wifi",    handle_wifi_configure)
+    app.router.add_post("/api/reboot",            handle_reboot)
+    return app
+
+
+if __name__ == "__main__":
+    app = build_app()
+    web.run_app(app, host="0.0.0.0", port=8001, access_log=logging.getLogger())

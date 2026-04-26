@@ -1,521 +1,458 @@
-<! doctype html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>SimpleBabyMonitor</title>
-  <meta name="description" content="Simple local baby monitor with HLS streaming and WiFi configuration" />
   <style>
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     html, body {
-      height: 100%;
-      margin:  0;
+      height: 100%; margin: 0;
       background: #000;
-      -webkit-touch-callout: none;
-      -webkit-user-select: none;
-      -ms-user-select: none;
-      user-select: none;
+      -webkit-user-select: none; user-select: none;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     }
 
-    /* Tab Navigation */
+    /* ── Tab nav ── */
     .tabs-header {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 50px;
-      background: #1a1a1a;
-      border-bottom: 2px solid #333;
-      display: flex;
-      z-index: 100;
+      position: fixed; top: 0; left: 0; right: 0; height: 50px;
+      background: #1a1a1a; border-bottom: 2px solid #333;
+      display: flex; z-index: 100;
     }
-
     .tab-button {
-      flex: 1;
-      border: none;
-      background: #1a1a1a;
-      color: #999;
-      font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      border-bottom: 3px solid transparent;
+      flex: 1; border: none; background: #1a1a1a; color: #999;
+      font-size: 16px; font-weight: 600; cursor: pointer;
+      transition: all .3s; border-bottom: 3px solid transparent;
     }
+    .tab-button.active { color: #fff; border-bottom-color: #0ea5e9; background: #222; }
+    .tab-button:hover { color: #ccc; }
 
-    .tab-button. active {
-      color: #fff;
-      border-bottom-color: #0ea5e9;
-      background: #222;
-    }
+    .tabs-container { position: fixed; top: 50px; left: 0; right: 0; bottom: 0; overflow: hidden; }
+    .tab-content { position: absolute; width: 100%; height: 100%; opacity: 0; pointer-events: none; transition: opacity .3s; overflow: auto; }
+    .tab-content.active { opacity: 1; pointer-events: auto; }
 
-    .tab-button:hover {
-      color: #ccc;
-    }
-
-    /* Tab Content */
-    .tabs-container {
-      position: fixed;
-      top: 50px;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      overflow:  hidden;
-    }
-
-    .tab-content {
-      position: absolute;
-      width: 100%;
-      height:  100%;
-      opacity: 0;
-      pointer-events: none;
-      transition:  opacity 0.3s ease;
-      overflow: auto;
-    }
-
-    .tab-content.active {
-      opacity: 1;
-      pointer-events: auto;
-    }
-
-    /* View Tab Styles */
+    /* ── View tab ── */
     .view-wrap {
-      position: relative;
-      width: 100%;
-      height:  100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: #000;
+      position: relative; width: 100%; height: 100%;
+      display: flex; align-items: center; justify-content: center; background: #000;
     }
-
-    video {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      background: #000;
-    }
+    video { width: 100%; height: 100%; object-fit: contain; background: #000; }
 
     .status {
-      position: absolute;
-      top: 12px;
-      left: 12px;
-      color: #eee;
-      font-size:  13px;
-      background: rgba(0, 0, 0, 0.6);
-      padding: 8px 12px;
-      border-radius: 8px;
-      backdrop-filter: blur(4px);
-      border: 1px solid rgba(255, 255, 255, 0.2);
+      position: absolute; top: 12px; left: 12px;
+      color: #eee; font-size: 13px;
+      background: rgba(0,0,0,.6); padding: 8px 12px;
+      border-radius: 8px; backdrop-filter: blur(4px);
+      border: 1px solid rgba(255,255,255,.2);
+      z-index: 20;
     }
 
-    /* Setup Tab Styles */
-    . setup-container {
-      max-width: 600px;
-      margin: 20px auto;
-      padding: 20px;
-      background: #1a1a1a;
-      border-radius: 12px;
+    /* ── Loading overlay ── */
+    .loading-overlay {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(0, 0, 0, 0.88);
+      z-index: 10;
+      transition: opacity .5s ease;
+    }
+    .loading-overlay.hidden { opacity: 0; pointer-events: none; }
+
+    .loading-card {
+      text-align: center; padding: 32px 40px;
+      background: #1a1a1a; border-radius: 16px;
+      border: 1px solid #333; max-width: 280px; width: 90%;
     }
 
-    .setup-section {
-      margin-bottom: 30px;
+    .spinner {
+      width: 52px; height: 52px;
+      border: 4px solid rgba(255,255,255,.12);
+      border-top-color: #0ea5e9;
+      border-radius: 50%;
+      margin: 0 auto 20px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-stage {
+      font-size: 15px; color: #ccc; margin-bottom: 12px; min-height: 22px;
+    }
+    .loading-time {
+      font-size: 36px; font-weight: 700; color: #0ea5e9;
+      letter-spacing: -1px; margin-bottom: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+    .loading-hint {
+      font-size: 12px; color: #555; line-height: 1.5;
     }
 
-    . setup-section h2 {
-      color: #fff;
-      font-size: 20px;
-      margin-top: 0;
-      margin-bottom: 15px;
-      border-bottom: 2px solid #333;
-      padding-bottom: 10px;
-    }
-
-    .form-group {
-      margin-bottom: 15px;
-    }
-
-    . form-group label {
-      display: block;
-      color: #ccc;
-      font-size: 14px;
-      margin-bottom: 6px;
-      font-weight: 500;
-    }
-
-    .form-group input {
-      width:  100%;
-      padding: 12px;
-      background: #2a2a2a;
-      border: 1px solid #444;
-      border-radius: 6px;
-      color: #fff;
-      font-size: 16px;
-      transition: border-color 0.3s ease;
-    }
-
-    .form-group input:focus {
-      outline: none;
-      border-color: #0ea5e9;
-      background: #333;
-    }
-
-    .form-group input:: placeholder {
-      color: #666;
-    }
-
-    .button-group {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-      margin-top: 20px;
-    }
-
-    button {
-      padding: 12px 20px;
-      border: none;
-      border-radius: 6px;
-      font-size:  16px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.3s ease;
-    }
-
-    . btn-primary {
-      background: #0ea5e9;
-      color: #000;
-    }
-
-    .btn-primary:hover: not(:disabled) {
-      background: #0284c7;
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(14, 165, 233, 0.4);
-    }
-
-    .btn-primary:disabled {
-      background: #4b5563;
-      cursor: not-allowed;
-      opacity: 0.6;
-    }
-
-    .btn-secondary {
-      background: #444;
-      color: #fff;
-    }
-
-    .btn-secondary:hover:not(:disabled) {
-      background: #555;
-    }
-
-    .status-message {
-      padding: 12px;
-      border-radius: 6px;
-      margin-bottom: 15px;
-      font-size: 14px;
-      display: none;
-    }
-
-    .status-message.show {
-      display: block;
-    }
-
-    .status-message.success {
-      background: rgba(34, 197, 94, 0.2);
-      color: #86efac;
-      border: 1px solid #22c55e;
-    }
-
-    .status-message.error {
-      background: rgba(239, 68, 68, 0.2);
-      color: #fca5a5;
-      border:  1px solid #ef4444;
-    }
-
-    .status-message.loading {
-      background: rgba(14, 165, 233, 0.2);
-      color: #7dd3fc;
-      border: 1px solid #0ea5e9;
-    }
-
-    . info-box {
-      background: #2a2a2a;
-      border-left: 4px solid #0ea5e9;
-      padding: 12px;
-      border-radius: 4px;
-      margin-top: 15px;
-      font-size: 13px;
-      color: #aaa;
-      line-height: 1.6;
-    }
+    /* ── Setup tab ── */
+    .setup-container { max-width: 600px; margin: 20px auto; padding: 20px; background: #1a1a1a; border-radius: 12px; }
+    .setup-section { margin-bottom: 30px; }
+    .setup-section h2 { color: #fff; font-size: 20px; margin-top: 0; margin-bottom: 15px; border-bottom: 2px solid #333; padding-bottom: 10px; }
+    .form-group { margin-bottom: 15px; }
+    .form-group label { display: block; color: #ccc; font-size: 14px; margin-bottom: 6px; font-weight: 500; }
+    .form-group input { width: 100%; padding: 12px; background: #2a2a2a; border: 1px solid #444; border-radius: 6px; color: #fff; font-size: 16px; transition: border-color .3s; }
+    .form-group input:focus { outline: none; border-color: #0ea5e9; background: #333; }
+    .form-group input::placeholder { color: #666; }
+    .button-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
+    button { padding: 12px 20px; border: none; border-radius: 6px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all .3s; }
+    .btn-primary { background: #0ea5e9; color: #000; }
+    .btn-primary:hover:not(:disabled) { background: #0284c7; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(14,165,233,.4); }
+    .btn-primary:disabled { background: #4b5563; cursor: not-allowed; opacity: .6; }
+    .btn-secondary { background: #444; color: #fff; }
+    .btn-secondary:hover:not(:disabled) { background: #555; }
+    .btn-danger { background: #dc2626; color: #fff; }
+    .btn-danger:hover:not(:disabled) { background: #b91c1c; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(220,38,38,.4); }
+    .btn-danger:disabled { background: #4b5563; cursor: not-allowed; opacity: .6; }
+    .status-message { padding: 12px; border-radius: 6px; margin-bottom: 15px; font-size: 14px; display: none; }
+    .status-message.show { display: block; }
+    .status-message.success { background: rgba(34,197,94,.2); color: #86efac; border: 1px solid #22c55e; }
+    .status-message.error { background: rgba(239,68,68,.2); color: #fca5a5; border: 1px solid #ef4444; }
+    .status-message.loading { background: rgba(14,165,233,.2); color: #7dd3fc; border: 1px solid #0ea5e9; }
+    .info-box { background: #2a2a2a; border-left: 4px solid #0ea5e9; padding: 12px; border-radius: 4px; margin-top: 15px; font-size: 13px; color: #aaa; line-height: 1.6; }
+    .info-box.warn { border-left-color: #f59e0b; }
 
     @media (max-width: 600px) {
-      .setup-container {
-        margin: 10px;
-        padding: 15px;
-      }
-
-      . button-group {
-        grid-template-columns: 1fr;
-      }
-
-      .tab-button {
-        font-size: 14px;
-      }
+      .setup-container { margin: 10px; padding: 15px; }
+      .button-group { grid-template-columns: 1fr; }
+      .tab-button { font-size: 14px; }
     }
   </style>
 </head>
 <body>
-  <!-- Tab Navigation -->
   <div class="tabs-header">
-    <button class="tab-button active" data-tab="view">
-      📹 View
-    </button>
-    <button class="tab-button" data-tab="setup">
-      ⚙️ Setup
-    </button>
+    <button class="tab-button active" data-tab="view">📹 View</button>
+    <button class="tab-button" data-tab="setup">⚙️ Setup</button>
   </div>
 
-  <!-- Tab Content -->
   <div class="tabs-container">
-    <!-- View Tab -->
+    <!-- View tab -->
     <div class="tab-content active" id="view-tab">
       <div class="view-wrap">
-        <video id="player" playsinline webkit-playsinline muted autoplay controls>
-          <source src="/hls/stream.m3u8" type="application/vnd.apple.mpegurl">
-          Your browser does not support HLS playback natively. 
-        </video>
+        <video id="player" playsinline webkit-playsinline autoplay></video>
+
+        <!-- Loading overlay — visible until stream starts playing -->
+        <div class="loading-overlay" id="loadingOverlay">
+          <div class="loading-card">
+            <div class="spinner"></div>
+            <div class="loading-stage" id="loadingStage">Connecting…</div>
+            <div class="loading-time" id="loadingTime">0s</div>
+            <div class="loading-hint">Usually connects in a few seconds.<br>Camera warm-up adds ~3 s on first start.</div>
+          </div>
+        </div>
+
         <div class="status" id="status">Connecting…</div>
       </div>
     </div>
 
-    <!-- Setup Tab -->
+    <!-- Setup tab -->
     <div class="tab-content" id="setup-tab">
       <div class="setup-container">
+
+        <!-- WiFi config -->
         <div class="setup-section">
           <h2>WiFi Configuration</h2>
-          
           <div id="configStatus" class="status-message"></div>
-
           <div class="form-group">
             <label for="ssid">Network Name (SSID)</label>
-            <input
-              type="text"
-              id="ssid"
-              placeholder="Enter WiFi network name"
-              autocomplete="off"
-            />
+            <input type="text" id="ssid" placeholder="Enter WiFi network name" autocomplete="off" />
           </div>
-
           <div class="form-group">
             <label for="password">Password</label>
-            <input
-              type="password"
-              id="password"
-              placeholder="Enter WiFi password (leave empty for open networks)"
-              autocomplete="off"
-            />
+            <input type="password" id="password" placeholder="Leave empty for open networks" autocomplete="off" />
           </div>
-
           <div class="button-group">
-            <button class="btn-primary" id="configureBtn">
-              Connect WiFi
-            </button>
-            <button class="btn-secondary" id="clearBtn">
-              Clear
-            </button>
+            <button class="btn-primary" id="configureBtn">Connect WiFi</button>
+            <button class="btn-secondary" id="clearBtn">Clear</button>
           </div>
-
           <div class="info-box">
             <strong>ℹ️ How it works:</strong><br>
-            Enter your WiFi network name and password above.  The device will attempt to connect to the specified network.  Make sure the network is available and the credentials are correct.
+            Enter your WiFi credentials. The device will attempt to connect using nmcli.
           </div>
         </div>
 
+        <!-- Device control -->
+        <div class="setup-section">
+          <h2>Device Control</h2>
+          <div id="rebootStatus" class="status-message"></div>
+          <div class="button-group" style="grid-template-columns: 1fr;">
+            <button class="btn-danger" id="rebootBtn">⚠️ Reboot Device</button>
+          </div>
+          <div class="info-box warn">
+            The Raspberry Pi will restart. The stream will be unavailable for ~30 seconds.
+          </div>
+        </div>
+
+        <!-- Device info -->
         <div class="setup-section">
           <h2>Device Information</h2>
           <div class="info-box">
             <strong>🍓 Raspberry Pi Camera Monitor</strong><br>
-            Local streaming via HLS<br>
-            <br>
+            Real-time streaming via WebRTC<br><br>
             <strong>Access:</strong> Connect via ZeroTier for remote access<br>
-            <strong>Port:</strong> 8000<br>
-            <strong>Streaming:</strong> /hls/stream.m3u8
+            <strong>Port:</strong> 8001<br>
+            <strong>Latency:</strong> ~100–300 ms
           </div>
         </div>
+
       </div>
     </div>
   </div>
 
   <script>
-    // Tab switching logic
-    document.querySelectorAll('.tab-button').forEach(button => {
-      button.addEventListener('click', () => {
-        const tabName = button.dataset.tab;
-
-        // Hide all tabs
-        document.querySelectorAll('.tab-content').forEach(tab => {
-          tab.classList. remove('active');
-        });
-
-        // Deactivate all buttons
-        document.querySelectorAll('.tab-button').forEach(btn => {
-          btn.classList. remove('active');
-        });
-
-        // Show selected tab
-        document.getElementById(`${tabName}-tab`).classList.add('active');
-        button.classList.add('active');
+    // ── Tab switching ─────────────────────────────────────────────────────────
+    document.querySelectorAll('.tab-button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tab = btn.dataset.tab;
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+        document.getElementById(tab + '-tab').classList.add('active');
+        btn.classList.add('active');
       });
     });
 
-    // WiFi Configuration
-    const configureBtn = document.getElementById('configureBtn');
-    const clearBtn = document.getElementById('clearBtn');
-    const ssidInput = document.getElementById('ssid');
-    const passwordInput = document.getElementById('password');
-    const configStatus = document.getElementById('configStatus');
-
-    function showStatus(message, type) {
-      configStatus.textContent = message;
-      configStatus.className = `status-message show ${type}`;
-      if (type !== 'loading') {
-        setTimeout(() => {
-          configStatus. classList.remove('show');
-        }, 5000);
-      }
+    // ── Setup status helper ───────────────────────────────────────────────────
+    function showMsg(elId, msg, type, autohide = true) {
+      const el = document.getElementById(elId);
+      el.textContent = msg;
+      el.className = 'status-message show ' + type;
+      if (autohide && type !== 'loading') setTimeout(() => el.classList.remove('show'), 5000);
     }
 
-    configureBtn.addEventListener('click', async () => {
-      const ssid = ssidInput.value.trim();
-      const password = passwordInput.value;
+    // ── WiFi config ───────────────────────────────────────────────────────────
+    const configureBtn = document.getElementById('configureBtn');
+    document.getElementById('clearBtn').addEventListener('click', () => {
+      document.getElementById('ssid').value = '';
+      document.getElementById('password').value = '';
+      document.getElementById('configStatus').classList.remove('show');
+    });
+    document.getElementById('password').addEventListener('keypress', e => {
+      if (e.key === 'Enter') configureBtn.click();
+    });
 
-      if (!ssid) {
-        showStatus('❌ Please enter a network name', 'error');
+    configureBtn.addEventListener('click', async () => {
+      const ssid = document.getElementById('ssid').value.trim();
+      if (!ssid) { showMsg('configStatus', '❌ Please enter a network name', 'error'); return; }
+      configureBtn.disabled = true;
+      showMsg('configStatus', '⏳ Configuring WiFi…', 'loading', false);
+      try {
+        const res = await fetch('/api/configure-wifi', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ssid, password: document.getElementById('password').value }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          showMsg('configStatus', `✅ WiFi configured for "${ssid}"`, 'success');
+          document.getElementById('ssid').value = '';
+          document.getElementById('password').value = '';
+        } else {
+          showMsg('configStatus', `❌ ${data.message}`, 'error');
+        }
+      } catch (e) { showMsg('configStatus', `❌ ${e.message}`, 'error'); }
+      finally { configureBtn.disabled = false; }
+    });
+
+    // ── Reboot ────────────────────────────────────────────────────────────────
+    const rebootBtn = document.getElementById('rebootBtn');
+    let rebootArmed = false;
+    let rebootArmTimer = null;
+
+    rebootBtn.addEventListener('click', async () => {
+      // Two-step confirmation: first click arms, second click within 4 s fires
+      if (!rebootArmed) {
+        rebootArmed = true;
+        rebootBtn.textContent = '⚠️ Tap again to confirm reboot';
+        rebootBtn.style.background = '#f59e0b';
+        rebootArmTimer = setTimeout(() => {
+          rebootArmed = false;
+          rebootBtn.textContent = '⚠️ Reboot Device';
+          rebootBtn.style.background = '';
+        }, 4000);
         return;
       }
 
-      configureBtn.disabled = true;
-      showStatus('⏳ Configuring WiFi connection...', 'loading');
+      // Second click — fire
+      clearTimeout(rebootArmTimer);
+      rebootArmed = false;
+      rebootBtn.disabled = true;
+      rebootBtn.textContent = '⚠️ Reboot Device';
+      rebootBtn.style.background = '';
+      showMsg('rebootStatus', '⏳ Sending reboot command…', 'loading', false);
 
       try {
-        const response = await fetch('/api/configure-wifi', {
-          method:  'POST',
-          headers:  {
-            'Content-Type':  'application/json',
-          },
-          body: JSON.stringify({
-            ssid: ssid,
-            password: password,
-          }),
-        });
-
-        const data = await response.json();
-
-        if (response.ok) {
-          showStatus(`✅ WiFi configuration initiated for "${ssid}"`, 'success');
-          ssidInput.value = '';
-          passwordInput.value = '';
-        } else {
-          showStatus(`❌ Configuration failed: ${data.message}`, 'error');
-        }
-      } catch (error) {
-        showStatus(`❌ Error:  ${error.message}`, 'error');
-      } finally {
-        configureBtn.disabled = false;
+        await fetch('/api/reboot', { method: 'POST' });
+      } catch (_) {
+        // Connection reset is expected when the Pi actually reboots — treat as success
       }
+      showMsg('rebootStatus', '✅ Rebooting… stream will return in ~30 s', 'success', false);
     });
 
-    clearBtn.addEventListener('click', () => {
-      ssidInput.value = '';
-      passwordInput.value = '';
-      configStatus.classList.remove('show');
-    });
-
-    // Allow Enter key to submit
-    passwordInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        configureBtn.click();
-      }
-    });
-
-    // Video streaming logic (from original)
+    // ── WebRTC streaming ──────────────────────────────────────────────────────
     (function () {
-      const player = document. getElementById('player');
-      const statusEl = document.getElementById('status');
+      const player    = document.getElementById('player');
+      const statusEl  = document.getElementById('status');
+      const overlayEl = document.getElementById('loadingOverlay');
+      const stageEl   = document.getElementById('loadingStage');
+      const timeEl    = document.getElementById('loadingTime');
 
-      let trying = 0;
+      let pc           = null;
+      let retryTimer   = null;
+      let watchdog     = null;
+      let retryCount   = 0;
+      let timerStart   = null;
+      let timerTick    = null;
+
+      // Server uses host-only ICE; browser still benefits from STUN for its own candidates
+      const ICE_SERVERS = [
+        { urls: 'stun:stun.l.google.com:19302' },
+      ];
+
+      // ── Loading overlay helpers ──
+      function startLoadingTimer() {
+        timerStart = Date.now();
+        timeEl.textContent = '0s';
+        if (timerTick) clearInterval(timerTick);
+        timerTick = setInterval(() => {
+          const s = Math.floor((Date.now() - timerStart) / 1000);
+          timeEl.textContent = s + 's';
+        }, 500);
+      }
+
+      function setStage(msg) {
+        stageEl.textContent = msg;
+        statusEl.textContent = msg;
+      }
+
+      function showLoading(stage) {
+        overlayEl.classList.remove('hidden');
+        setStage(stage);
+      }
+
+      function hideLoading() {
+        overlayEl.classList.add('hidden');
+        if (timerTick) { clearInterval(timerTick); timerTick = null; }
+      }
+
+      // ── Connect ──
+      async function connect() {
+        if (pc) { pc.close(); pc = null; }
+
+        showLoading('Connecting…');
+        startLoadingTimer();
+
+        pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+
+        const stream = new MediaStream();
+        player.srcObject = stream;
+
+        pc.ontrack = e => {
+          stream.addTrack(e.track);
+          if (e.track.kind === 'video') {
+            // Mute first: browsers (especially Safari) block autoplay with audio.
+            // Unmute immediately after play() resolves — user hears audio within ~1 frame.
+            player.muted = true;
+            player.play()
+              .then(() => { player.muted = false; })
+              .catch(() => {
+                player.muted = false;
+                setStage('▶️ Tap screen to start');
+              });
+          }
+        };
+
+        pc.onconnectionstatechange = () => {
+          const s = pc.connectionState;
+          if (s === 'connected') {
+            setStage('📹 Starting stream…');
+            retryCount = 0;
+            // Watchdog: only retry if video truly never arrives (30 s is generous
+            // because we may just be waiting for the user to tap to unmute).
+            clearTimeout(watchdog);
+            watchdog = setTimeout(() => {
+              if (pc && pc.connectionState === 'connected') {
+                retryCount = 0;   // reset so next retry is fast
+                scheduleRetry();
+              }
+            }, 30000);
+          } else if (s === 'disconnected' || s === 'failed') {
+            clearTimeout(watchdog);
+            showLoading('🔄 Reconnecting…');
+            startLoadingTimer();
+            scheduleRetry();
+          }
+        };
+
+        pc.addTransceiver('video', { direction: 'recvonly' });
+        pc.addTransceiver('audio', { direction: 'recvonly' });
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        setStage('Negotiating stream…');
+
+        let answer;
+        try {
+          const res = await fetch('/offer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sdp: pc.localDescription.sdp, type: pc.localDescription.type }),
+          });
+          if (!res.ok) throw new Error('Server error ' + res.status);
+          answer = await res.json();
+        } catch (err) {
+          showLoading('⚠️ Signaling failed');
+          scheduleRetry();
+          return;
+        }
+
+        setStage('Establishing connection…');
+
+        try {
+          await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        } catch (err) {
+          showLoading('⚠️ SDP error');
+          scheduleRetry();
+        }
+      }
+
+      function scheduleRetry() {
+        if (retryTimer) return;
+        const delay = Math.min(30000, 1000 * Math.pow(1.5, retryCount++));
+        retryTimer = setTimeout(() => { retryTimer = null; connect(); }, delay);
+      }
 
       player.addEventListener('playing', () => {
+        clearTimeout(watchdog);
+        hideLoading();
         statusEl.textContent = '📹 Live';
       });
+      player.addEventListener('waiting',  () => statusEl.textContent = '⏳ Buffering…');
+      // stalled = brief buffer underrun, not a connection failure — just update status
+      player.addEventListener('stalled',  () => statusEl.textContent = '⏳ Buffering…');
+      player.addEventListener('error', scheduleRetry);
 
-      player.addEventListener('waiting', () => {
-        statusEl.textContent = '⏳ Buffering…';
-      });
+      // Tap on video or overlay starts playback when autoplay was blocked
+      function tryPlay() { player.play().then(() => { player.muted = false; }).catch(() => {}); }
+      player.addEventListener('click', tryPlay);
+      overlayEl.addEventListener('click', tryPlay);
 
-      player.addEventListener('stalled', () => {
-        statusEl.textContent = '🔄 Reconnecting…';
-      });
-
-      player.addEventListener('error', () => {
-        statusEl.textContent = '⚠️ Playback error';
-        retryLoad();
-      });
-
-      async function tryAutoplay() {
-        try {
-          await player.play();
-          statusEl.textContent = '📹 Live';
-        } catch (e) {
-          statusEl.textContent = '▶️ Tap to play';
-        }
-      }
-
-      function retryLoad() {
-        trying++;
-        const delay = Math.min(30000, 500 * Math.pow(2, trying));
-        setTimeout(() => {
-          try {
-            const src = '/hls/stream.m3u8? cb=' + Date.now();
-            const source = player.querySelector('source');
-            if (source) {
-              source. src = src;
-            } else {
-              player.src = src;
-            }
-            player.load();
-            player.play().catch(() => {});
-          } catch (e) {
-            retryLoad();
-          }
-        }, delay);
-      }
-
-      tryAutoplay();
-
-      setTimeout(() => {
-        if (player.paused || player.readyState < 3) {
-          statusEl.textContent = '▶️ Tap to play';
-        }
-      }, 2000);
-
+      // Double-tap → fullscreen
       let lastTap = 0;
-      player.addEventListener('touchend', (ev) => {
+      player.addEventListener('touchend', () => {
         const now = Date.now();
         if (now - lastTap < 300) {
-          if (document.fullscreenElement) {
-            document.exitFullscreen().catch(() => {});
-          } else {
-            player.requestFullscreen().catch(() => {});
-          }
+          document.fullscreenElement
+            ? document.exitFullscreen().catch(() => {})
+            : player.requestFullscreen().catch(() => {});
         }
         lastTap = now;
       });
+
+      connect();
     })();
   </script>
 </body>
