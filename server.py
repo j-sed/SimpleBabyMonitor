@@ -48,10 +48,14 @@ AUDIO_TIME_BASE    = fractions.Fraction(1, AUDIO_SAMPLE_RATE)
 
 STATIC_DIR = os.path.dirname(os.path.abspath(__file__))
 
+MIC_GAIN_MIN = 0.5
+MIC_GAIN_MAX = 10.0
+
 # ── Globals ───────────────────────────────────────────────────────────────────
 
 picam2: Picamera2 | None = None
 pcs: Set[RTCPeerConnection] = set()
+mic_gain: float = 1.0
 
 # ── WiFi helpers ──────────────────────────────────────────────────────────────
 
@@ -175,6 +179,8 @@ class MicrophoneAudioTrack(AudioStreamTrack):
         pts = int((now - self._t0) * AUDIO_SAMPLE_RATE)
 
         samples = np.frombuffer(raw, dtype=np.int16).reshape(1, -1)
+        if mic_gain != 1.0:
+            samples = np.clip(samples.astype(np.float32) * mic_gain, -32768, 32767).astype(np.int16)
         frame = av.AudioFrame.from_ndarray(samples, format="s16", layout="mono")
         frame.pts         = pts
         frame.time_base   = AUDIO_TIME_BASE
@@ -302,6 +308,25 @@ async def handle_wifi_configure(request: web.Request) -> web.Response:
     )
 
 
+async def handle_set_volume(request: web.Request) -> web.Response:
+    global mic_gain
+    try:
+        data = await request.json()
+    except Exception:
+        raise web.HTTPBadRequest(reason="Invalid JSON")
+
+    gain = data.get("gain")
+    if not isinstance(gain, (int, float)):
+        return web.json_response({"status": "error", "message": "gain must be a number"}, status=400)
+
+    mic_gain = float(max(MIC_GAIN_MIN, min(MIC_GAIN_MAX, gain)))
+    logging.info(f"Mic gain set to {mic_gain:.2f}x")
+    return web.json_response(
+        {"status": "success", "gain": mic_gain},
+        headers={"Access-Control-Allow-Origin": "*"},
+    )
+
+
 async def handle_reboot(request: web.Request) -> web.Response:
     loop = asyncio.get_running_loop()
     try:
@@ -357,6 +382,7 @@ def build_app() -> web.Application:
     app.router.add_options("/offer",              handle_offer_options)
     app.router.add_get("/api/wifi-networks",      handle_wifi_list)
     app.router.add_post("/api/configure-wifi",    handle_wifi_configure)
+    app.router.add_post("/api/set-volume",        handle_set_volume)
     app.router.add_post("/api/reboot",            handle_reboot)
     return app
 
