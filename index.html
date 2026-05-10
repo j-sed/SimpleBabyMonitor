@@ -18,19 +18,28 @@
 
     /* ── Tab nav ── */
     .tabs-header {
-      position: fixed; top: 0; left: 0; right: 0; height: 50px;
+      position: fixed; top: 0; left: 0; right: 0;
+      /* Reserve space for iPhone notch / Dynamic Island */
+      padding-top: env(safe-area-inset-top);
+      height: calc(50px + env(safe-area-inset-top));
       background: #1a1a1a; border-bottom: 2px solid #333;
       display: flex; z-index: 100;
     }
     .tab-button {
-      flex: 1; border: none; background: #1a1a1a; color: #999;
+      flex: 1; border: none; background: transparent; color: #999;
       font-size: 16px; font-weight: 600; cursor: pointer;
       transition: all .3s; border-bottom: 3px solid transparent;
+      /* Ensure buttons sit in the non-safe-area portion */
+      align-self: flex-end; height: 50px;
     }
-    .tab-button.active { color: #fff; border-bottom-color: #0ea5e9; background: #222; }
+    .tab-button.active { color: #fff; border-bottom-color: #0ea5e9; background: rgba(255,255,255,.05); }
     .tab-button:hover { color: #ccc; }
 
-    .tabs-container { position: fixed; top: 50px; left: 0; right: 0; bottom: 0; overflow: hidden; }
+    .tabs-container {
+      position: fixed;
+      top: calc(50px + env(safe-area-inset-top));
+      left: 0; right: 0; bottom: 0; overflow: hidden;
+    }
     .tab-content { position: absolute; width: 100%; height: 100%; opacity: 0; pointer-events: none; transition: opacity .3s; overflow: auto; }
     .tab-content.active { opacity: 1; pointer-events: auto; }
 
@@ -115,6 +124,24 @@
     .info-box { background: #2a2a2a; border-left: 4px solid #0ea5e9; padding: 12px; border-radius: 4px; margin-top: 15px; font-size: 13px; color: #aaa; line-height: 1.6; }
     .info-box.warn { border-left-color: #f59e0b; }
 
+    /* ── Volume slider ── */
+    .volume-row { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+    .volume-row input[type=range] {
+      flex: 1; -webkit-appearance: none; appearance: none;
+      height: 6px; border-radius: 3px;
+      background: linear-gradient(to right, #0ea5e9 var(--pct,0%), #444 var(--pct,0%));
+      outline: none; cursor: pointer;
+    }
+    .volume-row input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 22px; height: 22px;
+      border-radius: 50%; background: #0ea5e9; cursor: pointer;
+    }
+    .volume-row input[type=range]::-moz-range-thumb {
+      width: 22px; height: 22px; border: none;
+      border-radius: 50%; background: #0ea5e9; cursor: pointer;
+    }
+    .volume-value { min-width: 38px; text-align: right; color: #0ea5e9; font-weight: 700; font-size: 15px; }
+
     @media (max-width: 600px) {
       .setup-container { margin: 10px; padding: 15px; }
       .button-group { grid-template-columns: 1fr; }
@@ -151,6 +178,23 @@
     <!-- Setup tab -->
     <div class="tab-content" id="setup-tab">
       <div class="setup-container">
+
+        <!-- Microphone volume -->
+        <div class="setup-section">
+          <h2>🎙️ Microphone Volume</h2>
+          <div id="volumeStatus" class="status-message"></div>
+          <div class="form-group">
+            <label for="micGain">Gain (1× = normal, up to 10×)</label>
+            <div class="volume-row">
+              <input type="range" id="micGain" min="0.5" max="10" step="0.5" value="1" />
+              <span class="volume-value" id="micGainValue">1×</span>
+            </div>
+          </div>
+          <div class="info-box">
+            Amplifies the microphone signal on the server before streaming.
+            Increase if the baby room audio is too quiet.
+          </div>
+        </div>
 
         <!-- WiFi config -->
         <div class="setup-section">
@@ -203,6 +247,46 @@
   </div>
 
   <script>
+    // ── Microphone volume ─────────────────────────────────────────────────────
+    (function () {
+      const slider   = document.getElementById('micGain');
+      const valueEl  = document.getElementById('micGainValue');
+      let debounce   = null;
+
+      function updateTrack() {
+        const pct = ((slider.value - slider.min) / (slider.max - slider.min)) * 100;
+        slider.style.setProperty('--pct', pct + '%');
+      }
+
+      async function sendGain(gain) {
+        try {
+          const res = await fetch('/api/set-volume', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ gain: parseFloat(gain) }),
+          });
+          const data = await res.json();
+          if (res.ok) {
+            showMsg('volumeStatus', `✅ Gain set to ${data.gain}×`, 'success');
+          } else {
+            showMsg('volumeStatus', `❌ ${data.message}`, 'error');
+          }
+        } catch (e) {
+          showMsg('volumeStatus', `❌ ${e.message}`, 'error');
+        }
+      }
+
+      slider.addEventListener('input', () => {
+        const v = parseFloat(slider.value);
+        valueEl.textContent = v + '×';
+        updateTrack();
+        clearTimeout(debounce);
+        debounce = setTimeout(() => sendGain(v), 400);
+      });
+
+      updateTrack();
+    })();
+
     // ── Tab switching ─────────────────────────────────────────────────────────
     document.querySelectorAll('.tab-button').forEach(btn => {
       btn.addEventListener('click', () => {
